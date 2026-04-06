@@ -91,7 +91,7 @@ Provide your response as a structured JSON with these fields:
 
             # Create the prompt
             prompt = self.prompt_template.format(
-                paper_text=paper_text,
+                paper_content=paper_text,
                 title=paper_content.get("title", "Unknown"),
                 abstract=paper_content.get("abstract", ""),
             )

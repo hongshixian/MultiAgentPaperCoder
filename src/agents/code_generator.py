@@ -33,13 +33,13 @@ class CodeGeneratorAgent(BaseAgent):
                 return f.read()
 
         # Default prompt template
-        return """You are an expert Python developer specializing in machine learning implementations. Generate production-ready, well-documented code.
+        return """You are an expert developer specializing in machine learning implementations. Generate production-ready, well-documented code.
 
 Algorithm Information:
-{algorithm_info}
+{{algorithm_info}}
 
 Implementation Plan:
-{code_plan}
+{{code_plan}}
 
 Generate complete, runnable Python code for each file in the project structure. Follow best practices:
 - Include comprehensive docstrings
@@ -107,7 +107,7 @@ Entry Points: {', '.join(code_plan.get('entry_points', []))}
 
             # Create the prompt
             prompt = self.prompt_template.format(
-                algorithm=algorithm_info,
+                algorithm_info=algorithm_info,
                 code_plan=code_plan_str,
             )
 

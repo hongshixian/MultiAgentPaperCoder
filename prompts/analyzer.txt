@@ -48,24 +48,25 @@ Please analyze the paper and extract the following information:
    - How does data flow through the system?
    - What are the key modules/components?
 
-Provide your response as a structured JSON with these fields:
-```json
-{
+Provide your response as a structured JSON with these fields.
+IMPORTANT: Return ONLY the JSON object, no markdown formatting, no code blocks, no explanations.
+
+JSON Format (return only this structure):
+{{
   "algorithm_name": "string",
   "algorithm_type": "string",
   "core_logic": "string",
   "pseudocode": "string",
-  "hyperparameters": {
+  "hyperparameters": {{
     "param_name": "value or range",
-    ...
-  },
-  "requirements": {
+    "param_name2": "value or range"
+  }},
+  "requirements": {{
     "dataset": "string",
-    "frameworks": ["framework1", "framework2", ...],
+    "frameworks": ["framework1", "framework2"],
     "compute": "string"
-  },
+  }},
   "data_flow": "string"
-}
-```
+}}
 
-Ensure your JSON is valid and can be parsed with standard JSON parsers.
+Ensure your JSON is valid and can be parsed with standard JSON parsers. Return ONLY the JSON.

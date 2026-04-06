@@ -30,38 +30,28 @@ Based on the algorithm information above, create a comprehensive implementation 
    - What metrics to use
    - Test data requirements
 
-Provide your response as a structured JSON with these fields:
-```json
-{
+Provide your response as a structured JSON with these fields.
+IMPORTANT: Return ONLY JSON object, no markdown formatting, no code blocks, no explanations.
+
+JSON Format (return only this structure):
+{{
   "project_structure": [
-    {
+    {{
       "path": "relative/path/to/file.py",
       "description": "Brief description of this file's purpose",
       "type": "script|module|config"
-    },
-    ...
+    }}
   ],
   "implementation_steps": [
     "Step 1: Description",
-    "Step 2: Description",
-    ...
+    "Step 2: Description"
   ],
-  "dependencies": {
-    "python_packages": [
-      "package==version",
-      ...
-    ],
-    "system_packages": [
-      "package_name",
-      ...
-    ]
-  },
-  "entry_points": [
-    "main.py",
-    ...
-  ],
+  "dependencies": {{
+    "python_packages": ["package==version"],
+    "system_packages": ["package_name"]
+  }},
+  "entry_points": ["main.py"],
   "test_plan": "Detailed testing strategy and validation approach"
-}
-```
+}}
 
-Ensure your JSON is valid and can be parsed with standard JSON parsers.
+Ensure your JSON is valid and can be parsed with standard JSON parsers. Return ONLY JSON.
