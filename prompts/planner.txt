@@ -1,0 +1,67 @@
+You are an expert software architect planning the implementation of a machine learning algorithm based on a research paper.
+
+Algorithm Information:
+{algorithm_info}
+
+Based on the algorithm information above, create a comprehensive implementation plan. Consider:
+
+1. **Project Structure**:
+   - Main script for training/inference
+   - Data loading module
+   - Model definition module
+   - Configuration file
+   - Utility functions (if needed)
+   - Test script
+
+2. **Implementation Steps**:
+   - Break down the implementation into clear, sequential steps
+   - Each step should be implementable and testable
+
+3. **Dependencies**:
+   - List all required Python packages with versions
+   - Identify any system dependencies
+
+4. **Entry Points**:
+   - Main training script
+   - Testing/evaluation script (if applicable)
+
+5. **Testing Plan**:
+   - How to validate the implementation
+   - What metrics to use
+   - Test data requirements
+
+Provide your response as a structured JSON with these fields:
+```json
+{
+  "project_structure": [
+    {
+      "path": "relative/path/to/file.py",
+      "description": "Brief description of this file's purpose",
+      "type": "script|module|config"
+    },
+    ...
+  ],
+  "implementation_steps": [
+    "Step 1: Description",
+    "Step 2: Description",
+    ...
+  ],
+  "dependencies": {
+    "python_packages": [
+      "package==version",
+      ...
+    ],
+    "system_packages": [
+      "package_name",
+      ...
+    ]
+  },
+  "entry_points": [
+    "main.py",
+    ...
+  ],
+  "test_plan": "Detailed testing strategy and validation approach"
+}
+```
+
+Ensure your JSON is valid and can be parsed with standard JSON parsers.
