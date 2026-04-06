@@ -28,17 +28,19 @@ MultiAgentPaperCoder
 | Agent | 功能 | 核心工具 |
 |-------|------|----------|
 | PaperCoderSuperAgent | 协调工作流和状态管理 | LangGraph工作流 |
-| PDFReaderAgent |.读取PDF并提取结构化内容 | PyPDF2/pdfplumber |
-| AlgorithmAnalyzerAgent | 分析算法并提取关键信息 | Claude API |
-| CodePlannerAgent | 设计代码结构和实现计划 | Claude API |
-| CodeGeneratorAgent | 生成完整Python代码 | Claude API |
+| PDFReaderAgent | 读取PDF并提取结构化内容 | PyPDF2/pdfplumber |
+| AlgorithmAnalyzerAgent | 分析算法并提取关键信息 | Claude API / ZhipuAI API |
+| CodePlannerAgent | 设计代码结构和实现计划 | Claude API / ZhipuAI API |
+| CodeGeneratorAgent | 生成完整Python代码 | Claude API / ZhipuAI API |
 | CodeValidatorAgent | 运行并验证代码 | Conda + subprocess |
 
 ## 技术栈
 
 - **Python**: 3.12+
 - **LLM编排**: LangGraph (自实现的简单工作流，未来可升级到LangGraph)
-- **大语言模型**: Claude API
+- **大语言模型**: 
+  - Claude API (默认)
+  - ZhipuAI API (支持)
 - **PDF解析**: PyPDF2 + pdfplumber
 - **代码执行**: subprocess + conda环境隔离
 
@@ -63,11 +65,23 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-编辑 `.env` 文件，设置你的 Claude API Key：
+#### 使用 Claude API
 
+编辑 `.env` 文件：
 ```
+LLM_PROVIDER=claude
 ANTHROPIC_API_KEY=your_api_key_here
 CLAUDE_MODEL=claude-3-5-sonnet-20241022
+```
+
+#### 使用 ZhipuAI API
+
+编辑 `.env` 文件：
+```
+LLM_PROVIDER=zhipu
+ZHIPU_API_KEY=your_zhipu_api_key_here
+ZHIPU_MODEL=glm-5
+ZHIPU_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 ```
 
 ### 3. 使用
@@ -97,7 +111,7 @@ MultiAgentPaperCoder/
 │   ├── design.md           # 详细设计说明
 │   └── architecture.md     # 系统架构设计
 ├── src/                    # 源代码
-│   ├── agents/            # Agent实现
+│   ├── agents/             # Agent实现
 │   │   ├── base.py              # Agent基类
 │   │   ├── super_agent.py       # 主控智能体
 │   │   ├── pdf_reader.py        # PDF读取器
@@ -105,13 +119,13 @@ MultiAgentPaperCoder/
 │   │   ├── code_planner.py      # 代码规划器
 │   │   ├── code_generator.py    # 代码生成器
 │   │   └── code_validator.py    # 代码验证器
-│   ├── graph/             # 工作流编排
+│   ├── graph/              # 工作流编排
 │   │   └── workflow.py          # 主工作流
-│   ├── tools/             # 工具集
-│   │   ├── llm_client.py        # LLM客户端
+│   ├── tools/              # 工具集
+│   │   ├── llm_client.py        # LLM客户端（支持Claude和ZhipuAI）
 │   │   ├── pdf_parser.py        # PDF解析器
 │   │   └── code_executor.py    # 代码执行器
-│   └── state/             # 状态管理
+│   └── state/              # 状态管理
 │       └── __init__.py          # 状态定义
 ├── prompts/               # 提示词模板
 │   ├── analyzer.txt       # 算法分析提示词
@@ -134,7 +148,7 @@ MultiAgentPaperCoder/
 
 在 `output/generated_code/` 目录下生成完整的代码项目：
 
-````python
+```
 output/generated_code/
 ├── main.py              # 主训练脚本
 ├── model.py             # 模型定义
@@ -142,7 +156,7 @@ output/generated_code/
 ├── config.py            # 配置文件
 ├── utils.py             # 工具函数
 └── requirements.txt     # 依赖列表
-````
+```
 
 ### 2. 执行报告
 
@@ -162,6 +176,12 @@ output/generated_code/
 ```bash
 # 基础功能测试
 python examples/test_simple.py
+
+# 智谱AI集成测试
+python test_zhipu.py
+
+# 完整工作流测试
+python test_with_pdf.py --pdf paper_examples/your_paper.pdf
 ```
 
 ### 添加新的Agent
@@ -173,7 +193,7 @@ python examples/test_simple.py
 ```python
 from src.agents.base import BaseAgent
 
-class MyCustomAgent(BaseAgent):
+class MyCustomAgent
     def __init__(self, config=None):
         super().__init__("MyCustomAgent", config)
 
@@ -196,18 +216,23 @@ class MyCustomAgent(BaseAgent):
 
 LangGraph具有以下优势：
 - 更成熟的生态系统
-- 完善的文档和示例
+- 完 完的文档和示例
 - 更好的社区支持
 - 更灵活的状态管理
 
-注意：当前实现使用了简化的工作流模式，未来可以无缝迁移到LangGraph的StateGraph。
+### 为什么支持ZhipuAI？
+
+- 为国内用户提供更好的访问体验
+- 降低API调用成本
+- 与OpenAI SDK兼容，易于集成
 
 ## 注意事项
 
-1. **API Key安全**: 请妥善保管你的 Claude API Key，不要提交到版本控制
+1. **API Key安全**: 请妥善保管你的 API Key，不要提交到版本控制
 2. **成本控制**: 每次处理论文都会调用LLM API，注意监控使用量和成本
 3. **Conda环境**: 确保指定的conda环境存在并且Python版本为3.12+
 4. **代码安全**: 生成的代码在隔离环境中运行，但建议审查生成的代码
+5. **PDF格式**: 目前支持标准PDF格式，扫描版PDF可能需要额外处理
 
 ## 未来计划
 
@@ -217,6 +242,7 @@ LangGraph具有以下优势：
 - [ ] 添加Web界面
 - [ ] 支持论文数据库集成
 - [ ] 添加代码质量检查（静态分析、测试覆盖率）
+- [ ] 优化大论文的Token使用量
 
 ## 文档
 

@@ -113,11 +113,18 @@ class PDFParser:
                 if self.config.extract_figures:
                     # Get images/figures from page
                     for img in page.images:
-                        figures.append({
+                        figure_info = {
                             "page": page_num + 1,
-                            "bbox": img["bbox"],
-                            "type": img.get("stream_type", "unknown"),
-                        })
+                        }
+                        # Extract bbox if available
+                        if hasattr(img, "bbox") and img.bbox:
+                            figure_info["bbox"] = img.bbox
+                        # Extract stream_type if available
+                        if hasattr(img, "stream_type") and img.stream_type:
+                            figure_info["type"] = img.stream_type
+                        else:
+                            figure_info["type"] = "unknown"
+                        figures.append(figure_info)
 
         return {
             "full_text": "\n".join(full_text),
