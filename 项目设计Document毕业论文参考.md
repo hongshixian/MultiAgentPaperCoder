@@ -148,8 +148,42 @@ flowchart LR
     end
     
     UI --> SA
-    SA --> DA & CG & EC & CT & BF & RV
-    DA & CG & EC & CT & BF & RV --> LLM & PDF & DOCKER & KB & TOOLS
+    SA --> DA
+    SA --> CG
+    SA --> EC
+    SA --> CT
+    SA --> BF
+    SA --> RV
+    DA --> LLM
+    DA --> PDF
+    DA --> DOCKER
+    DA --> KB
+    DA --> TOOLS
+    CG --> LLM
+    CG --> PDF
+    CG --> DOCKER
+    CG --> KB
+    CG --> TOOLS
+    EC --> LLM
+    EC --> PDF
+    EC --> DOCKER
+    EC --> KB
+    EC --> TOOLS
+    CT --> LLM
+    CT --> PDF
+    CT --> DOCKER
+    CT --> KB
+    CT --> TOOLS
+    BF --> LLM
+    BF --> PDF
+    BF --> DOCKER
+    BF --> KB
+    BF --> TOOLS
+    RV --> LLM
+    RV --> PDF
+    RV --> DOCKER
+    RV --> KB
+    RV --> TOOLS
 ```
 
 上层为超级智能体，负责全局的任务调度、进度管理和异常处理，协调整个工作流的运行，下层为多个功能专一的子智能体，负责具体的任务执行，包括文档分析智能体、代码生成智能体、环境配置智能体、测试智能体、错误修复智能体、结果验证智能体等。在两层架构之下是工具与资源层，提供系统运行所需的基础能力，包括大语言模型接口、PDF解析工具、代码运行环境、知识库等。整个系统的架构分为用户界面层、调度层、智能体层和工具资源层四个层级，用户界面层负责与用户进行交互，接收用户上传的论文，展示复现进度和结果，调度层由超级智能体组成，负责整个复现流程的调度管理，智能体层由各个子智能体组成，负责具体任务的执行，工具资源层为上层提供基础的能力支持。这种分层架构设计使得系统的各个模块职责清晰，耦合度低，便于开发和维护，同时也具有良好的可扩展性，可以方便地添加新的智能体扩展系统的功能。
