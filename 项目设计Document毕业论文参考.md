@@ -122,29 +122,32 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    subgraph  用户界面层
-        UI[用户交互界面]
+    classDef layer fill:#f9f,stroke:#333,stroke-width:2px
+    classDef node fill:#9f9,stroke:#333,stroke-width:1px
+    
+    subgraph 用户界面层
+        UI[用户交互界面]:::node
     end
     
     subgraph 调度层
-        SA[超级智能体(全局调度、任务分配、异常处理)]
+        SA[超级智能体 全局调度 任务分配 异常处理]:::node
     end
     
     subgraph 智能体层
-        DA[文档分析智能体]
-        CG[代码生成智能体]
-        EC[环境配置智能体]
-        CT[测试智能体]
-        BF[错误修复智能体]
-        RV[结果验证智能体]
+        DA[文档分析智能体]:::node
+        CG[代码生成智能体]:::node
+        EC[环境配置智能体]:::node
+        CT[测试智能体]:::node
+        BF[错误修复智能体]:::node
+        RV[结果验证智能体]:::node
     end
     
     subgraph 工具资源层
-        LLM[大语言模型接口]
-        PDF[PDF解析工具]
-        DOCKER[Docker运行环境]
-        KB[领域知识库]
-        TOOLS[其他工具集]
+        LLM[大语言模型接口]:::node
+        PDF[PDF解析工具]:::node
+        DOCKER[Docker运行环境]:::node
+        KB[领域知识库]:::node
+        TOOLS[其他工具集]:::node
     end
     
     UI --> SA
