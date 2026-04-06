@@ -120,31 +120,28 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    classDef layer fill:#f0f8ff,stroke:#2c3e50,stroke-width:2px
-    classDef node fill:#e8f4f8,stroke:#3498db,stroke-width:1px,rounded:5px
-    
-    subgraph 第一层：用户界面层
-        UI[用户交互界面]:::node
+    subgraph 用户界面层
+        UI[用户交互界面]
     end
     
-    subgraph 第二层：调度层
-        SA[超级智能体 全局调度 任务分配 异常处理]:::node
+    subgraph 调度层
+        SA[超级智能体 全局调度 任务分配 异常处理]
     end
     
-    subgraph 第三层：智能体层
-        DA[文档分析智能体]:::node
-        CG[代码生成智能体]:::node
-        EC[环境配置智能体]:::node
-        CT[测试智能体]:::node
-        BF[错误修复智能体]:::node
-        RV[结果验证智能体]:::node
+    subgraph 智能体层
+        DA[文档分析智能体]
+        CG[代码生成智能体]
+        EC[环境配置智能体]
+        CT[测试智能体]
+        BF[错误修复智能体]
+        RV[结果验证智能体]
     end
     
-    subgraph 第四层：工具资源层
-        LLM[大语言模型接口]:::node
-        PDF[PDF解析工具]:::node
-        KB[领域知识库]:::node
-        TOOLS[其他工具集]:::node
+    subgraph 工具资源层
+        LLM[大语言模型接口]
+        PDF[PDF解析工具]
+        KB[领域知识库]
+        TOOLS[其他工具集]
     end
 ```
 
