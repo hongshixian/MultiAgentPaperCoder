@@ -127,7 +127,7 @@ flowchart LR
     end
     
     subgraph 调度层
-        SA[超级智能体<br/>(全局调度、任务分配、异常处理)]
+        SA[超级智能体(全局调度、任务分配、异常处理)]
     end
     
     subgraph 智能体层
