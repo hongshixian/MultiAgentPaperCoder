@@ -236,8 +236,15 @@ Return your answer as valid JSON that can be parsed with json.loads().
                             json_text = response[start_idx:i+1]
                             return json.loads(json_text)
 
+            # Improved error message with more context
+            response_len = len(response)
+            last_chars = response[-100:] if response_len > 100 else response
+            first_chars = response[:100] if response_len > 100 else response
             raise ValueError(
-                f"Failed to parse LLM response as JSON. Response: {response[:500]}..."
+                f"Failed to parse LLM response as JSON. "
+                f"Response length: {response_len} chars. "
+                f"First 100 chars: {first_chars}... "
+                f"Last 100 chars: ...{last_chars}"
             )
         except Exception as e:
             raise ValueError(
