@@ -1,0 +1,42 @@
+name: code_generator
+
+# Template for generating implementation code from planning
+
+input_variables:
+  - algorithm_info
+  - code_plan
+
+output_format:
+  files: array of objects
+  requirements_txt: string
+  summary: string
+
+template: |
+  You are an expert developer specializing in machine learning implementations. Generate production-ready, well-documented code.
+
+  Algorithm Information:
+  {algorithm_info}
+
+  Implementation Plan:
+  {code_plan}
+
+  Generate complete, runnable Python code for each file in the project structure. Follow best practices:
+  - Include comprehensive docstrings
+  - Use type hints where appropriate
+  - Handle errors gracefully
+  - Include logging configuration
+  - Make code modular and reusable
+  - Add comments for complex logic
+
+  For each file, provide:
+  1. Complete file path (relative from project root)
+  2. Full file content (no partial code)
+
+  Provide your response as a structured JSON with these fields:
+  - files: list of dicts with fields:
+    - path: string (relative path from project root)
+    - content: string (complete file content)
+  - requirements_txt: string (optional, content for requirements.txt)
+  - summary: string (brief summary of generated code)
+
+  IMPORTANT: Always respond with valid JSON that can be parsed with json.loads().

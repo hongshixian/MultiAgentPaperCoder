@@ -5,6 +5,7 @@ import os
 
 from .base import BaseAgent
 from ..tools.llm_client import LLMClient
+from ..prompts import PROMPTS
 
 
 class CodeGeneratorAgent(BaseAgent):
@@ -18,48 +19,7 @@ class CodeGeneratorAgent(BaseAgent):
         """
         super().__init__("CodeGenerator", config)
         self.llm_client = LLMClient()
-        self.prompt_template = self._load_prompt_template()
         self.output_dir = config.get("output_dir", "./output/generated_code")
-
-    def _load_prompt_template(self) -> str:
-        """Load the prompt template from file or use default."""
-        prompt_template_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
-            "..", "prompts", "generator.txt"
-        )
-
-        if os.path.exists(prompt_template_path):
-            with open(prompt_template_path, "r", encoding="utf-8") as f:
-                return f.read()
-
-        # Default prompt template
-        return """You are an expert developer specializing in machine learning implementations. Generate production-ready, well-documented code.
-
-Algorithm Information:
-{{algorithm_info}}
-
-Implementation Plan:
-{{code_plan}}
-
-Generate complete, runnable Python code for each file in the project structure. Follow best practices:
-- Include comprehensive docstrings
-- Use type hints where appropriate
-- Handle errors gracefully
-- Include logging configuration
-- Make code modular and reusable
-- Add comments for complex logic
-
-For each file, provide:
-1. Complete file path (relative)
-2. Full file content (no partial code)
-
-Provide your response as a structured JSON with these fields:
-- files: list of dicts with fields:
-  - path: string (relative path from project root)
-  - content: string (complete file content)
-- requirements_txt: string (optional, content for requirements.txt)
-- summary: string (brief summary of generated code)
-"""
 
     def __call__(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Generate code from the plan.
@@ -80,7 +40,7 @@ Provide your response as a structured JSON with these fields:
             }
 
         try:
-            # Prepare information for the prompt
+            # Prepare information for prompt
             algorithm_info = f"""
 Algorithm Name: {algorithm_analysis.get('algorithm_name', 'Unknown')}
 Algorithm Type: {algorithm_analysis.get('algorithm_type', 'Unknown')}
@@ -105,8 +65,9 @@ Dependencies:
 Entry Points: {', '.join(code_plan.get('entry_points', []))}
 """
 
-            # Create the prompt
-            prompt = self.prompt_template.format(
+            # Format prompt using new prompt system
+            prompt = PROMPTS.format_template(
+                "code_generator",
                 algorithm_info=algorithm_info,
                 code_plan=code_plan_str,
             )
