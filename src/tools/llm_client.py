@@ -216,12 +216,9 @@ Return your answer as valid JSON that can be parsed with json.loads().
             if json_block_match:
                 json_text = json_block_match.group(1).strip()
                 try:
-                    return json.loads(json_text)
-                except json.JSONDecodeError:
-                    # Try to fix common JSON issues
-                    # Remove trailing commas
-                    json_text = re.sub(r',\s*([}\]])', r'\1', json_text)
-                    return json.loads(json_text)
+                    return self._parse_robust_json(json_text)
+                except ValueError:
+                    pass
 
             # Try to find JSON object from first { to matching }
             start_idx = response.find('{')
@@ -234,7 +231,10 @@ Return your answer as valid JSON that can be parsed with json.loads().
                         brace_count -= 1
                         if brace_count == 0:
                             json_text = response[start_idx:i+1]
-                            return json.loads(json_text)
+                            try:
+                                return self._parse_robust_json(json_text)
+                            except ValueError:
+                                pass
 
             # Improved error message with more context
             response_len = len(response)
@@ -249,6 +249,93 @@ Return your answer as valid JSON that can be parsed with json.loads().
         except Exception as e:
             raise ValueError(
                 f"Failed to parse LLM response as JSON. Error: {str(e)}. Response: {response[:500]}..."
+            )
+
+    def _parse_robust_json(self, json_text: str) -> Dict[str, Any]:
+        """Parse JSON with robust error handling.
+
+        Args:
+            json_text: JSON string to parse
+
+        Returns:
+            Parsed JSON object
+
+        Raises:
+            ValueError: If JSON cannot be parsed
+        """
+        import json
+        import re
+
+        # Try direct parsing first
+        try:
+            return json.loads(json_text)
+        except json.JSONDecodeError:
+            pass
+
+        # Fix common JSON issues
+        # 1. Remove trailing commas
+        json_text = re.sub(r',\s*([}\]])', r'\1', json_text)
+
+        # 2. Remove comments (// ...)
+        json_text = re.sub(r'//.*?$', '', json_text, flags=re.MULTILINE)
+
+        # 3. Remove block comments (/* ... */)
+        json_text = re.sub(r'/\*.*?\*/', '', json_text, flags=re.DOTALL)
+
+        # 4. Fix control characters in strings (replace with escaped version or remove)
+        # This is tricky - we'll try to replace common control characters
+        json_text = json_text.replace('\x00', '\\x00')
+        json_text = json_text.replace('\x01', '\\x01')
+        json_text = json_text.replace('\x02', '\\x02')
+        json_text = json_text.replace('\x03', '\\x03')
+        json_text = json_text.replace('\x04', '\\x04')
+        json_text = json_text.replace('\x05', '\\x05')
+        json_text = json_text.replace('\x06', '\\x06')
+        json_text = json_text.replace('\x07', '\\x07')
+        json_text = json_text.replace('\x08', '\\x08')
+        json_text = json_text.replace('\x0b', '\\x0b')
+        json_text = json_text.replace('\x0c', '\\x0c')
+        json_text = json_text.replace('\x0e', '\\x0e')
+        json_text = json_text.replace('\x0f', '\\x0f')
+        json_text = json_text.replace('\x10', '\\x10')
+        json_text = json_text.replace('\x11', '\\x11')
+        json_text = json_text.replace('\x12', '\\x12')
+        json_text = json_text.replace('\x13', '\\x13')
+        json_text = json_text.replace('\x14', '\\x14')
+        json_text = json_text.replace('\x15', '\\x15')
+        json_text = json_text.replace('\x16', '\\x16')
+        json_text = json_text.replace('\x17', '\\x17')
+        json_text = json_text.replace('\x18', '\\x18')
+        json_text = json_text.replace('\x19', '\\x19')
+        json_text = json_text.replace('\x1a', '\\x1a')
+        json_text = json_text.replace('\x1b', '\\x1b')
+        json_text = json_text.replace('\x1c', '\\x1c')
+        json_text = json_text.replace('\x1d', '\\x1d')
+        json_text = json_text.replace('\x1e', '\\x1e')
+        json_text = json_text.replace('\x1f', '\\x1f')
+
+        # Try parsing again after fixes
+        try:
+            return json.loads(json_text)
+        except json.JSONDecodeError as e:
+            # If still failing, provide more detailed error
+            line = e.lineno if hasattr(e, 'lineno') else 'unknown'
+            col = e.colno if hasattr(e, 'colno') else 'unknown'
+            error_pos = e.pos if hasattr(e, 'pos') else 'unknown'
+
+            # Show context around the error
+            error_context = ""
+            if isinstance(error_pos, int) and error_pos > 0:
+                start = max(0, error_pos - 100)
+                end = min(len(json_text), error_pos + 100)
+                error_context = json_text[start:end]
+                error_context = error_context.replace('\n', '\\n')
+                error_context = error_context.replace('\r', '\\r')
+                error_context = error_context.replace('\t', '\\t')
+
+            raise ValueError(
+                f"JSON parsing failed at line {line}, column {col}, position {error_pos}. "
+                f"Error context: {error_context}"
             )
 
     def stream_generate(

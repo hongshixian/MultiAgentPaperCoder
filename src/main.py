@@ -12,12 +12,23 @@ load_dotenv()
 
 def check_environment():
     """Check if required environment variables are set."""
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        print("Error: ANTHROPIC_API_KEY not set in .env file or environment")
-        print("Please set it in .env file:")
-        print("  ANTHROPIC_API_KEY=your_api_key_here")
-        return False
+    llm_provider = os.getenv("LLM_PROVIDER", "claude")
+
+    if llm_provider == "zhipu":
+        api_key = os.getenv("ZHIPU_API_KEY")
+        if not api_key:
+            print("Error: ZHIPU_API_KEY not set in .env file or environment")
+            print("Please set it in .env file:")
+            print("  ZHIPU_API_KEY=your_zhipu_api_key_here")
+            return False
+    else:
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            print("Error: ANTHROPIC_API_KEY not set in .env file or environment")
+            print("Please set it in .env file:")
+            print("  ANTHROPIC_API_KEY=your_api_key_here")
+            return False
+
     return True
 
 
