@@ -3,51 +3,10 @@
 import os
 import sys
 import argparse
-import json
 from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
-
-
-def check_environment():
-    """Check if required environment variables are set."""
-    llm_provider = os.getenv("LLM_PROVIDER", "claude")
-
-    if llm_provider == "zhipu":
-        api_key = os.getenv("ZHIPU_API_KEY")
-        if not api_key:
-            print("Error: ZHIPU_API_KEY not set in .env file or environment")
-            print("Please set it in .env file:")
-            print("  ZHIPU_API_KEY=your_zhipu_api_key_here")
-            return False
-    else:
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            print("Error: ANTHROPIC_API_KEY not set in .env file or environment")
-            print("Please set it in .env file:")
-            print("  ANTHROPIC_API_KEY=your_api_key_here")
-            return False
-
-    return True
-
-
-def check_conda_env(env_name="py12pt"):
-    """Check if conda environment exists."""
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["conda", "env", "list", "--json"],
-            capture_output=True,
-            timeout=10,
-        )
-        if result.returncode == 0:
-            envs = json.loads(result.stdout.decode())
-            env_names = [Path(env).name for env in envs["envs"]]
-            return env_name in env_names
-    except Exception:
-        pass
-    return None  # Could not determine
 
 
 def main():
@@ -62,21 +21,9 @@ def main():
         help="Path to PDF paper file"
     )
     parser.add_argument(
-        "--output-dir",
+        "--config",
         type=str,
-        default="./output/generated_code",
-        help="Output directory for generated code (default: ./output/generated_code)"
-    )
-    parser.add_argument(
-        "--conda-env",
-        type=str,
-        default="py12pt",
-        help="Conda environment name (default: py12pt)"
-    )
-    parser.add_argument(
-        "--skip-validation",
-        action="store_true",
-        help="Skip code validation step"
+        help="Path to configuration file (default: config/default.yaml)"
     )
     parser.add_argument(
         "--verbose",
@@ -86,20 +33,35 @@ def main():
 
     args = parser.parse_args()
 
-    # Check environment
-    print("Checking environment...")
-    if not check_environment():
+    # Load configuration: Load config from file
+    from src.config import AppConfig, load_config_from_file
+
+    config_path = Path(args.config) if args.config else Path("config/default.yaml")
+
+    try:
+        if config_path.exists():
+            print(f"Loading configuration from {config_path}...")
+            config = AppConfig.from_yaml(config_path)
+        else:
+            print(f"Config file not found: {config_path}")
+            print("Using default configuration...")
+            config = AppConfig()
+    except Exception as e:
+        print(f"Error loading configuration: {e}")
         sys.exit(1)
 
-    # Check conda environment
-    print(f"Checking conda environment '{args.conda_env}'...")
-    conda_exists = check_conda_env(args.conda_env)
-    if conda_exists is False:
-        print(f"Warning: Conda environment '{args.conda_env}' not found")
-        print("The code validation step may fail if the environment is not available")
-        print(f"Create it with: conda create -n {args.conda_env} python=3.12")
-    elif conda_exists is True:
-        print(f"✓ Conda environment '{args.conda_env}' found")
+    # Override with CLI arguments
+    config.verbose = args.verbose
+
+    # Validate configuration
+    print("\nValidating configuration...")
+    errors = config.validate()
+    if errors:
+        print("Configuration errors:")
+        for error in errors:
+            print(f"  - {error}")
+        sys.exit(1)
+    print("✓ Configuration is valid")
 
     # Check PDF file
     if not os.path.exists(args.pdf):
@@ -108,10 +70,15 @@ def main():
 
     print(f"✓ PDF file found: {args.pdf}")
 
-    # Create output directory
-    output_dir = os.path.abspath(args.output_dir)
-    os.makedirs(output_dir, exist_ok=True)
+    # Generate unique output path based on PDF and timestamp
+    pdf_path = Path(args.pdf)
+    output_dir = config.generate_output_path(pdf_path)
+    config.current_output_dir = output_dir
+
     print(f"✓ Output directory: {output_dir}")
+    print(f"  LLM Provider: {config.llm_provider}")
+    print(f"  LLM Model: {config.get_model()}")
+    print(f"  Conda Environment: {config.conda_env_name}")
 
     # Initialize and run workflow
     print("\n" + "=" * 60)
@@ -121,15 +88,21 @@ def main():
     try:
         from src.graph.workflow import PaperCoderWorkflow
 
-        config = {
-            "output_dir": output_dir,
-            "conda_env_name": args.conda_env,
-            "verbose": args.verbose,
-            "skip_validation": args.skip_validation,
+        # Convert config to dict for workflow
+        workflow_config = {
+            "output_dir": str(config.current_output_dir),
+            "conda_env_name": config.conda_env_name,
+            "verbose": config.verbose,
+            "skip_validation": config.skip_validation,
+            "max_retries": config.max_retries,
+            "llm_provider": config.llm_provider,
+            "llm_max_tokens": config.llm_max_tokens,
+            "llm_temperature": config.llm_temperature,
+            "timeout_seconds": config.timeout_seconds,
         }
 
-        workflow = PaperCoderWorkflow(config)
-        state = workflow.run(args.pdf)
+        workflow = PaperCoderWorkflow(workflow_config)
+        state = workflow.run(str(args.pdf))
 
         # Print summary
         summary = workflow.get_summary(state)
@@ -148,7 +121,7 @@ def main():
         sys.exit(130)
     except Exception as e:
         print(f"\n\n❌ Fatal error: {str(e)}")
-        if args.verbose:
+        if config.verbose:
             import traceback
             traceback.print_exc()
         sys.exit(1)
