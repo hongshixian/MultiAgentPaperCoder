@@ -25,11 +25,22 @@ class PaperState(TypedDict, total=False):
     # Code generation result
     generated_code: Optional[Dict[str, Any]]
 
+    # Environment configuration result
+    env_config: Optional[Dict[str, Any]]
+
     # Validation result
     validation_result: Optional[Dict[str, Any]]
+
+    # Result verification result
+    verification_result: Optional[Dict[str, Any]]
+
+    # Error repair history
+    repair_history: List[Dict[str, Any]]
 
     # Control information
     current_step: str
     errors: List[str]
     retry_count: int
     max_retries: int
+    iteration_count: int
+    max_iterations: int

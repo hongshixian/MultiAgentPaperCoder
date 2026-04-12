@@ -1,6 +1,6 @@
 """Workflow orchestration using LangGraph."""
 
-from typing import Dict, Any, Literal
+from typing import Dict, Any
 import os
 from dotenv import load_dotenv
 
@@ -8,10 +8,10 @@ load_dotenv()
 
 
 class PaperCoderWorkflow:
-    """Orchestrates the paper coding workflow using agents sequentially."""
+    """Orchestrates paper coding workflow with support for iterative repair."""
 
     def __init__(self, config: Dict[str, Any] = None):
-        """Initialize the workflow.
+        """Initialize workflow.
 
         Args:
             config: Optional configuration dictionary
@@ -23,7 +23,10 @@ class PaperCoderWorkflow:
         from ..agents.algorithm_analyzer import AlgorithmAnalyzerAgent
         from ..agents.code_planner import CodePlannerAgent
         from ..agents.code_generator import CodeGeneratorAgent
+        from ..agents.env_config_agent import EnvConfigAgent
         from ..agents.code_validator import CodeValidatorAgent
+        from ..agents.result_verification_agent import ResultVerificationAgent
+        from ..agents.error_repair_agent import ErrorRepairAgent
 
         # Initialize agents
         self.pdf_reader = PDFReaderAgent(self.config)
@@ -33,13 +36,16 @@ class PaperCoderWorkflow:
             **self.config,
             "output_dir": self.config.get("output_dir", "./output/generated_code"),
         })
+        self.env_config_agent = EnvConfigAgent(self.config)
         self.code_validator = CodeValidatorAgent({
             **self.config,
             "conda_env_name": self.config.get("conda_env_name", "py12pt"),
         })
+        self.result_verification_agent = ResultVerificationAgent(self.config)
+        self.error_repair_agent = ErrorRepairAgent(self.config)
 
     def _create_initial_state(self, pdf_path: str) -> Dict[str, Any]:
-        """Create initial state for the workflow.
+        """Create initial state for workflow.
 
         Args:
             pdf_path: Path to PDF file
@@ -53,11 +59,16 @@ class PaperCoderWorkflow:
             "algorithm_analysis": None,
             "code_plan": None,
             "generated_code": None,
+            "env_config": None,
             "validation_result": None,
+            "verification_result": None,
+            "repair_history": [],
             "current_step": "start",
             "errors": [],
             "retry_count": 0,
             "max_retries": self.config.get("max_retries", 3),
+            "iteration_count": 0,
+            "max_iterations": 5,
         }
 
     def _should_continue(self, state: Dict[str, Any]) -> bool:
@@ -82,14 +93,16 @@ class PaperCoderWorkflow:
             if any(any(crit in err for crit in critical_errors) for err in errors):
                 return False
 
-        # Stop if retry count exceeded
-        if state.get("retry_count", 0) >= state.get("max_retries", 3):
+        # Stop if iteration count exceeded
+        iteration_count = state.get("iteration_count", 0)
+        max_iterations = state.get("max_iterations", 5)
+        if iteration_count >= max_iterations:
             return False
 
         return True
 
     def _determine_next_step(self, state: Dict[str, Any]) -> str:
-        """Determine the next step based on current state.
+        """Determine next step based on current state.
 
         Args:
             state: Current state
@@ -100,15 +113,19 @@ class PaperCoderWorkflow:
         current_step = state.get("current_step", "start")
         errors = state.get("errors", [])
 
-        # Check for errors and decide whether to retry or continue
-        if errors and current_step != "start":
-            # If validation failed, we could go back to code generation
-            if current_step == "validation_completed":
-                # Check if we should retry code generation
-                if state.get("retry_count", 0) < state.get("max_retries", 3):
-                    return "retry_code_generation"
-                return "end"
+        # Check for critical errors
+        critical_errors = [
+            "PDF file not found",
+            "Paper content not available",
+            "Algorithm analysis not available",
+            "Missing algorithm analysis or code plan",
+        ]
+        if any(any(crit in err for crit in critical_errors) for err in errors):
             return "end"
+
+        # Check if we should continue
+        iteration_count = state.get("iteration_count", 0)
+        max_iterations = state.get("max_iterations", 5)
 
         # Normal flow
         if current_step == "start":
@@ -120,10 +137,32 @@ class PaperCoderWorkflow:
         elif current_step == "code_planning_completed":
             return "code_generation"
         elif current_step == "code_generation_completed":
+            return "env_config"
+        elif current_step == "env_config_completed":
             return "validation"
         elif current_step == "validation_completed":
-            return "end"
-        elif current_step == "retry_code_generation":
+            return "result_verification"
+        elif current_step == "result_verification_completed":
+            # Check verification result
+            verification = state.get("verification_result", {})
+            if verification.get("needs_repair"):
+                # Repair needed - check iteration count
+                if iteration_count >= max_iterations:
+                    return "end"
+                return "error_repair"
+            elif verification.get("needs_regeneration"):
+                # Regeneration needed - check iteration count
+                if iteration_count >= max_iterations:
+                    return "end"
+                return "code_generation_regenerate"
+            else:
+                # Results are good, end successfully
+                return "end"
+        elif current_step == "error_repair_completed":
+            # After repair, go back to validation
+            return "validation"
+        elif current_step == "code_generation_regenerate":
+            # After regen, go to code generation
             return "code_generation"
         else:
             return "end"
@@ -132,7 +171,7 @@ class PaperCoderWorkflow:
         """Run the complete workflow.
 
         Args:
-            pdf_path: Path to PDF file
+            pdf_path: Path to the PDF file
 
         Returns:
             Final state with all results
@@ -148,7 +187,7 @@ class PaperCoderWorkflow:
             if next_step == "end":
                 break
 
-            # Execute the next step
+            # Execute next step
             try:
                 if next_step == "pdf_reading":
                     state = self.pdf_reader(state)
@@ -162,13 +201,31 @@ class PaperCoderWorkflow:
                 elif next_step == "code_generation":
                     state = self.code_generator(state)
                     print("✓ Code generation completed")
+                elif next_step == "env_config":
+                    state = self.env_config_agent(state)
+                    print("✓ Environment configuration completed")
                 elif next_step == "validation":
                     state = self.code_validator(state)
-                    print("✓ Code validation completed")
-                elif next_step == "retry_code_generation":
-                    state["retry_count"] = state.get("retry_count", 0) + 1
-                    print(f"⚠ Retrying code generation (attempt {state['retry_count']})")
-                    # Keep previous generated code for reference
+                    validation_status = state.get("validation_result", {}).get("status", "unknown")
+                    print(f"✓ Code validation completed (status: {validation_status})")
+                elif next_step == "result_verification":
+                    state = self.result_verification_agent(state)
+                    verification = state.get("verification_result", {})
+                    quality_score = verification.get("quality_score", "N/A")
+                    print(f"✓ Result verification completed (quality: {quality_score})")
+                    if verification.get("needs_repair"):
+                        print(f"  → Needs repair")
+                    elif verification.get("needs_regeneration"):
+                        print(f"  → Needs code regeneration")
+                elif next_step == "error_repair":
+                    iteration = state.get("iteration_count", 0) + 1
+                    state["iteration_count"] = iteration
+                    print(f"⚠ Attempting error repair (iteration {iteration})")
+                    state = self.error_repair_agent(state)
+                elif next_step == "code_generation_regenerate":
+                    iteration = state.get("iteration_count", 0) + 1
+                    state["iteration_count"] = iteration
+                    print(f"⚠ Regenerating code (iteration {iteration})")
                     state = self.code_generator(state)
 
                 # Check if we should continue
@@ -184,10 +241,13 @@ class PaperCoderWorkflow:
                     break
 
         # Add final status
+        verification_result = state.get("verification_result", {})
         if state.get("errors"):
             state["status"] = "failed"
-        elif state.get("validation_result", {}).get("status") == "success":
+        elif verification_result.get("status") == "completed" and not verification_result.get("needs_regeneration") and not verification_result.get("needs_repair"):
             state["status"] = "success"
+        elif state.get("validation_result", {}).get("status") == "success":
+            state["status"] = "validation_success"  # Code ran but not verified
         elif state.get("validation_result", {}).get("status") == "failed":
             state["status"] = "validation_failed"
         else:
@@ -211,7 +271,7 @@ class PaperCoderWorkflow:
 
         # Status
         status = state.get("status", "unknown")
-        status_icon = "✓" if status == "success" else "✗"
+        status_icon = "✓" if "success" in status else "✗"
         summary_lines.append(f"\nStatus: {status_icon} {status}")
 
         # PDF info
@@ -248,6 +308,29 @@ class PaperCoderWorkflow:
                     summary_lines.append(f"\n   Suggestions:")
                     for i, sugg in enumerate(suggestions, 1):
                         summary_lines.append(f"   {i}. {sugg}")
+
+        # Verification result
+        if state.get("verification_result"):
+            verification = state["verification_result"]
+            if verification.get("status") == "completed":
+                summary_lines.append(f"\n📊 Result Verification:")
+                summary_lines.append(f"   Quality Score: {verification.get('quality_score', 'N/A')}")
+                summary_lines.append(f"   Assessment: {verification.get('assessment', 'N/A')}")
+
+                if verification.get("needs_repair") or verification.get("needs_regeneration"):
+                    suggestions = verification.get("suggestions", [])
+                    if suggestions:
+                        summary_lines.append(f"\n   Suggestions:")
+                        for i, sugg in enumerate(suggestions, 1):
+                            summary_lines.append(f"   {i}. {sugg}")
+
+        # Repair history
+        if state.get("repair_history"):
+            repair_history = state["repair_history"]
+            if repair_history:
+                summary_lines.append(f"\n🔧 Repair Attempts: {len(repair_history)}")
+                for i, entry in enumerate(repair_history, 1):
+                    summary_lines.append(f"   {i}. Cause: {entry.get('root_cause', 'N/A')}, Fixed: {len(entry.get('files_fixed', []))} files")
 
         # Errors
         if state.get("errors"):

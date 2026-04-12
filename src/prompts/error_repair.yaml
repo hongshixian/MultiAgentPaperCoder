@@ -1,0 +1,43 @@
+name: error_repair
+
+# Template for analyzing and repairing code errors
+
+input_variables:
+  - error_log
+  - current_files_summary
+  - repair_history
+
+output_format:
+  error_analysis: string
+  root_cause: string
+  fixes: array of objects
+  additional_dependencies: array of strings
+
+template: |
+  You are an expert Python debugger specializing in machine learning code. Analyze error log and provide targeted fixes.
+
+  Error log:
+  {error_log}
+
+  Current code files:
+  {current_files_summary}
+
+  {repair_history}
+
+  Your tasks:
+  1. Analyze the error to identify the root cause
+  2. Classify the error type (syntax, dependency, logic, runtime, etc.)
+  3. Provide precise fixes - include exact original code snippets and their corrected versions
+  4. For each fix, explain why the change is needed
+
+  Fixing principles:
+  - Strictly preserve algorithm logic - do not change core functionality
+  - Make minimal, targeted changes to fix the specific error
+  - Only use additional dependencies when absolutely necessary
+  - Ensure all replacements are exact matches to avoid breaking the code
+
+  Return your response as valid JSON with these fields:
+  - error_analysis: detailed analysis of the error
+  - root_cause: summary of the underlying problem
+  - fixes: array of {file, original_snippet, fixed_snippet, reason}
+  - additional_dependencies: array of package names if new dependencies are needed

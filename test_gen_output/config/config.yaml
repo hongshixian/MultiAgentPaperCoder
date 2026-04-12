@@ -1,0 +1,32 @@
+# Machine Learning Pipeline Configuration
+# ========================================
+
+# Model Configuration
+model:
+  model_type: random_forest
+  random_state: 42
+  hyperparameters:
+    n_estimators: 100
+    max_depth: 10
+    min_samples_split: 5
+    min_samples_leaf: 2
+
+# Data Configuration
+data:
+  data_path: data/input/dataset.csv
+  target_column: target
+  test_size: 0.2
+  validation_size: 0.2
+  categorical_columns: []
+  numerical_columns: []
+
+# Training Configuration
+training:
+  cross_validation_folds: 5
+  scoring_metric: accuracy
+  enable_hyperparameter_tuning: false
+  n_trials: 50
+
+# Output Configuration
+output_dir: outputs
+log_level: INFO
