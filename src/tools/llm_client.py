@@ -1,100 +1,62 @@
-"""LLM Client for interacting with LLM APIs (Claude, ZhipuAI, etc.)."""
+"""LLM Client using LangChain for unified API access."""
 
 import os
-from typing import Optional, Dict, Any, List
-from dataclasses import dataclass
-from dotenv import load_dotenv
 import json
+import re
+from typing import Optional, Dict, Any
+
+from dotenv import load_dotenv
 
 load_dotenv()
 
 
-@dataclass
-class LLMConfig:
-    """Configuration for LLM client."""
+def get_llm(provider: str = None, **kwargs):
+    """Create a LangChain Chat model based on provider.
 
-    # Provider selection
-    provider: str = os.getenv("LLM_PROVIDER", "claude")  # Options: claude, zhipu
+    Args:
+        provider: "claude" or "zhipu". Defaults to env LLM_PROVIDER or "claude".
+        **kwargs: Override config values.
 
-    # Claude Configuration
-    anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
-    claude_model: str = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+    Returns:
+        LangChain BaseChatModel instance.
+    """
+    provider = provider or os.getenv("LLM_PROVIDER", "claude")
 
-    # ZhipuAI Configuration
-    zhipu_api_key: str = os.getenv("ZHIPU_API_KEY", "")
-    zhipu_model: str = os.getenv("ZHIPU_MODEL", "glm-5")
-    # Note: OpenAI SDK will append /chat/completions to this base URL
-    zhipu_base_url: str = os.getenv("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4")
+    if provider == "zhipu":
+        from langchain_openai import ChatOpenAI
 
-    # Common Configuration
-    max_tokens: int = int(os.getenv("LLM_MAX_TOKENS", "4096"))
-    temperature: float = float(os.getenv("LLM_TEMPERATURE", "0.7"))
-    timeout: int = int(os.getenv("TIMEOUT_SECONDS", "300"))
+        return ChatOpenAI(
+            model=kwargs.get("model", os.getenv("ZHIPU_MODEL", "glm-5")),
+            api_key=kwargs.get("api_key", os.getenv("ZHIPU_API_KEY", "")),
+            base_url=kwargs.get(
+                "base_url",
+                os.getenv("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4"),
+            ),
+            max_tokens=kwargs.get("max_tokens", int(os.getenv("LLM_MAX_TOKENS", "4096"))),
+            temperature=kwargs.get("temperature", float(os.getenv("LLM_TEMPERATURE", "0.7"))),
+            timeout=kwargs.get("timeout", int(os.getenv("TIMEOUT_SECONDS", "300"))),
+        )
+    else:
+        from langchain_anthropic import ChatAnthropic
 
-    @property
-    def api_key(self) -> str:
-        """Get the appropriate API key based on provider."""
-        if self.provider == "zhipu":
-            return self.zhipu_api_key
-        else:
-            return self.anthropic_api_key
-
-    @property
-    def model(self) -> str:
-        """Get the appropriate model based on provider."""
-        if self.provider == "zhipu":
-            return self.zhipu_model
-        else:
-            return self.claude_model
+        return ChatAnthropic(
+            model=kwargs.get("model", os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")),
+            api_key=kwargs.get("api_key", os.getenv("ANTHROPIC_API_KEY", "")),
+            max_tokens=kwargs.get("max_tokens", int(os.getenv("LLM_MAX_TOKENS", "4096"))),
+            temperature=kwargs.get("temperature", float(os.getenv("LLM_TEMPERATURE", "0.7"))),
+            timeout=kwargs.get("timeout", int(os.getenv("TIMEOUT_SECONDS", "300"))),
+        )
 
 
 class LLMClient:
-    """Client for interacting with LLM APIs."""
+    """Client for interacting with LLM APIs via LangChain.
 
-    def __init__(self, config: Optional[LLMConfig] = None):
-        """Initialize LLM client.
+    Maintains the same public interface as the original implementation
+    but delegates to LangChain Chat models internally.
+    """
 
-        Args:
-            config: Optional LLM configuration
-        """
-        self.config = config or LLMConfig()
-
-        if not self.config.api_key:
-            raise ValueError(
-                f"{self.config.provider.upper()}_API_KEY not set. "
-                f"Please set it in .env file or as environment variable."
-            )
-
-        # Initialize appropriate client
-        if self.config.provider == "zhipu":
-            self._init_zhipu_client()
-        else:
-            self._init_claude_client()
-
-    def _init_claude_client(self):
-        """Initialize Claude API client."""
-        try:
-            from anthropic import Anthropic
-            self.client = Anthropic(api_key=self.config.api_key)
-        except ImportError:
-            raise ImportError(
-                "anthropic package not installed. "
-                "Please install it with: pip install anthropic"
-            )
-
-    def _init_zhipu_client(self):
-        """Initialize ZhipuAI API client (OpenAI compatible)."""
-        try:
-            from openai import OpenAI
-            self.client = OpenAI(
-                api_key=self.config.api_key,
-                base_url=self.config.zhipu_base_url
-            )
-        except ImportError:
-            raise ImportError(
-            "openai package not installed. "
-                "Please install it with: pip install openai"
-            )
+    def __init__(self, config=None):
+        self.llm = get_llm()
 
     def generate(
         self,
@@ -108,71 +70,27 @@ class LLMClient:
         Args:
             prompt: User prompt
             system_prompt: Optional system prompt
-            max_tokens: Override max_tokens from config
-            temperature: Override temperature from config
+            max_tokens: Override max_tokens
+            temperature: Override temperature
 
         Returns:
             Generated text response
         """
-        if self.config.provider == "zhipu":
-            return self._generate_zhipu(prompt, system_prompt, max_tokens, temperature)
-        else:
-            return self._generate_claude(prompt, system_prompt, max_tokens, temperature)
+        from langchain_core.messages import HumanMessage, SystemMessage
 
-    def _generate_claude(
-        self,
-        prompt: str,
-        system_prompt: Optional[str] = None,
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-    ) -> str:
-        """Generate response using Claude API."""
-        messages = max_tokens if max_tokens is not None else self.config.max_tokens
-        temp = temperature if temperature is not None else self.config.temperature
-
-        kwargs = {
-            "model": self.config.claude_model,
-            "max_tokens": messages,
-            "temperature": temp,
-            "messages": [{"role": "user", "content": prompt}],
-        }
-
+        messages = []
         if system_prompt:
-            kwargs["system"] = system_prompt
+            messages.append(SystemMessage(content=system_prompt))
+        messages.append(HumanMessage(content=prompt))
 
-        try:
-            response = self.client.messages.create(**kwargs)
-            return response.content[0].text
-        except Exception as e:
-            raise RuntimeError(f"Claude generation failed: {e}")
+        kwargs = {}
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        if temperature is not None:
+            kwargs["temperature"] = temperature
 
-    def _generate_zhipu(
-        self,
-        prompt: str,
-        system_prompt: Optional[str] = None,
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-    ) -> str:
-        """Generate response using ZhipuAI API."""
-        messages = max_tokens if max_tokens is not None else self.config.max_tokens
-        temp = temperature if temperature is not None else self.config.temperature
-
-        # Build messages
-        api_messages = []
-        if system_prompt:
-            api_messages.append({"role": "system", "content": system_prompt})
-        api_messages.append({"role": "user", "content": prompt})
-
-        try:
-            response = self.client.chat.completions.create(
-                model=self.config.zhipu_model,
-                messages=api_messages,
-                max_tokens=messages,
-                temperature=temp,
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            raise RuntimeError(f"ZhipuAI generation failed: {e}")
+        response = self.llm.invoke(messages, **kwargs)
+        return response.content
 
     def generate_structured(
         self,
@@ -180,15 +98,15 @@ class LLMClient:
         output_format: Dict[str, Any],
         system_prompt: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Generate structured response from LLM.
+        """Generate structured JSON response from LLM.
 
         Args:
             prompt: User prompt
-            output_format: Expected output format (for type hints)
+            output_format: Expected output format (for type hints in prompt)
             system_prompt: Optional system prompt
 
         Returns:
-            Parsed structured response
+            Parsed structured response as dict
         """
         full_prompt = f"""{prompt}
 
@@ -197,146 +115,8 @@ Please provide your response in a structured format that matches the following s
 
 Return your answer as valid JSON that can be parsed with json.loads().
 """
-
         response = self.generate(full_prompt, system_prompt)
-
-        try:
-            import json
-            import re
-
-            # Try to find JSON in response
-            # First, try direct parsing
-            try:
-                return json.loads(response)
-            except json.JSONDecodeError:
-                pass
-
-            # Try to find JSON code block (```json ... ```) - non-greedy to get first block
-            json_block_match = re.search(r'```(?:json)?\s*\n(.*?)\n```', response, re.DOTALL)
-            if json_block_match:
-                json_text = json_block_match.group(1).strip()
-                try:
-                    return self._parse_robust_json(json_text)
-                except ValueError:
-                    pass
-
-            # Try to find JSON object from first { to matching }
-            start_idx = response.find('{')
-            if start_idx != -1:
-                brace_count = 0
-                for i in range(start_idx, len(response)):
-                    if response[i] == '{':
-                        brace_count += 1
-                    elif response[i] == '}':
-                        brace_count -= 1
-                        if brace_count == 0:
-                            json_text = response[start_idx:i+1]
-                            try:
-                                return self._parse_robust_json(json_text)
-                            except ValueError:
-                                pass
-
-            # Improved error message with more context
-            response_len = len(response)
-            last_chars = response[-100:] if response_len > 100 else response
-            first_chars = response[:100] if response_len > 100 else response
-            raise ValueError(
-                f"Failed to parse LLM response as JSON. "
-                f"Response length: {response_len} chars. "
-                f"First 100 chars: {first_chars}... "
-                f"Last 100 chars: ...{last_chars}"
-            )
-        except Exception as e:
-            raise ValueError(
-                f"Failed to parse LLM response as JSON. Error: {str(e)}. Response: {response[:500]}..."
-            )
-
-    def _parse_robust_json(self, json_text: str) -> Dict[str, Any]:
-        """Parse JSON with robust error handling.
-
-        Args:
-            json_text: JSON string to parse
-
-        Returns:
-            Parsed JSON object
-
-        Raises:
-            ValueError: If JSON cannot be parsed
-        """
-        import json
-        import re
-
-        # Try direct parsing first
-        try:
-            return json.loads(json_text)
-        except json.JSONDecodeError:
-            pass
-
-        # Fix common JSON issues
-        # 1. Remove trailing commas
-        json_text = re.sub(r',\s*([}\]])', r'\1', json_text)
-
-        # 2. Remove comments (// ...)
-        json_text = re.sub(r'//.*?$', '', json_text, flags=re.MULTILINE)
-
-        # 3. Remove block comments (/* ... */)
-        json_text = re.sub(r'/\*.*?\*/', '', json_text, flags=re.DOTALL)
-
-        # 4. Fix control characters in strings (replace with escaped version or remove)
-        # This is tricky - we'll try to replace common control characters
-        json_text = json_text.replace('\x00', '\\x00')
-        json_text = json_text.replace('\x01', '\\x01')
-        json_text = json_text.replace('\x02', '\\x02')
-        json_text = json_text.replace('\x03', '\\x03')
-        json_text = json_text.replace('\x04', '\\x04')
-        json_text = json_text.replace('\x05', '\\x05')
-        json_text = json_text.replace('\x06', '\\x06')
-        json_text = json_text.replace('\x07', '\\x07')
-        json_text = json_text.replace('\x08', '\\x08')
-        json_text = json_text.replace('\x0b', '\\x0b')
-        json_text = json_text.replace('\x0c', '\\x0c')
-        json_text = json_text.replace('\x0e', '\\x0e')
-        json_text = json_text.replace('\x0f', '\\x0f')
-        json_text = json_text.replace('\x10', '\\x10')
-        json_text = json_text.replace('\x11', '\\x11')
-        json_text = json_text.replace('\x12', '\\x12')
-        json_text = json_text.replace('\x13', '\\x13')
-        json_text = json_text.replace('\x14', '\\x14')
-        json_text = json_text.replace('\x15', '\\x15')
-        json_text = json_text.replace('\x16', '\\x16')
-        json_text = json_text.replace('\x17', '\\x17')
-        json_text = json_text.replace('\x18', '\\x18')
-        json_text = json_text.replace('\x19', '\\x19')
-        json_text = json_text.replace('\x1a', '\\x1a')
-        json_text = json_text.replace('\x1b', '\\x1b')
-        json_text = json_text.replace('\x1c', '\\x1c')
-        json_text = json_text.replace('\x1d', '\\x1d')
-        json_text = json_text.replace('\x1e', '\\x1e')
-        json_text = json_text.replace('\x1f', '\\x1f')
-
-        # Try parsing again after fixes
-        try:
-            return json.loads(json_text)
-        except json.JSONDecodeError as e:
-            # If still failing, provide more detailed error
-            line = e.lineno if hasattr(e, 'lineno') else 'unknown'
-            col = e.colno if hasattr(e, 'colno') else 'unknown'
-            error_pos = e.pos if hasattr(e, 'pos') else 'unknown'
-
-            # Show context around the error
-            error_context = ""
-            if isinstance(error_pos, int) and error_pos > 0:
-                start = max(0, error_pos - 100)
-                end = min(len(json_text), error_pos + 100)
-                error_context = json_text[start:end]
-                error_context = error_context.replace('\n', '\\n')
-                error_context = error_context.replace('\r', '\\r')
-                error_context = error_context.replace('\t', '\\t')
-
-            raise ValueError(
-                f"JSON parsing failed at line {line}, column {col}, position {error_pos}. "
-                f"Error context: {error_context}"
-            )
+        return self._parse_json(response)
 
     def stream_generate(
         self,
@@ -352,61 +132,75 @@ Return your answer as valid JSON that can be parsed with json.loads().
         Returns:
             Complete response text
         """
-        if self.config.provider == "zhipu":
-            return self._stream_generate_zhipu(prompt, system_prompt)
-        else:
-            return self._stream_generate_claude(prompt, system_prompt)
+        from langchain_core.messages import HumanMessage, SystemMessage
 
-    def _stream_generate_claude(
-        self,
-        prompt: str,
-        system_prompt: Optional[str] = None,
-    ) -> str:
-        """Generate response with streaming using Claude API."""
-        kwargs = {
-            "model": self.config.claude_model,
-            "max_tokens": self.config.max_tokens,
-            "temperature": self.config.temperature,
-            "messages": [{"role": "user", "content": prompt}],
-            "stream": True,
-        }
-
+        messages = []
         if system_prompt:
-            kwargs["system"] = system_prompt
+            messages.append(SystemMessage(content=system_prompt))
+        messages.append(HumanMessage(content=prompt))
+
+        chunks = []
+        for chunk in self.llm.stream(messages):
+            chunks.append(chunk.content)
+        return "".join(chunks)
+
+    # -- JSON parsing utilities (preserved from original) --
+
+    @staticmethod
+    def _parse_json(response: str) -> Dict[str, Any]:
+        """Parse JSON from LLM response with robust fallback strategies."""
+        # 1. Direct parse
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError:
+            pass
+
+        # 2. Extract from ```json ... ``` code block
+        match = re.search(r"```(?:json)?\s*\n(.*?)\n```", response, re.DOTALL)
+        if match:
+            try:
+                return LLMClient._parse_robust(match.group(1).strip())
+            except ValueError:
+                pass
+
+        # 3. Find first balanced { ... }
+        start = response.find("{")
+        if start != -1:
+            depth = 0
+            for i in range(start, len(response)):
+                if response[i] == "{":
+                    depth += 1
+                elif response[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            return LLMClient._parse_robust(response[start : i + 1])
+                        except ValueError:
+                            pass
+                        break
+
+        raise ValueError(
+            f"Failed to parse LLM response as JSON. "
+            f"Response length: {len(response)}. "
+            f"First 200 chars: {response[:200]}"
+        )
+
+    @staticmethod
+    def _parse_robust(text: str) -> Dict[str, Any]:
+        """Parse JSON with trailing-comma and comment fixes."""
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # Remove trailing commas
+        text = re.sub(r",\s*([}\]])", r"\1", text)
+        # Remove line comments
+        text = re.sub(r"//.*?$", "", text, flags=re.MULTILINE)
+        # Remove block comments
+        text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
 
         try:
-            response_text = ""
-            with self.client.messages.stream(**kwargs) as stream:
-                for text in stream.text_stream:
-                    response_text += text
-            return response_text
-        except Exception as e:
-            raise RuntimeError(f"Claude streaming failed: {e}")
-
-    def _stream_generate_zhipu(
-        self,
-        prompt: str,
-        system_prompt: Optional[str] = None,
-    ) -> str:
-        """Generate response with streaming using ZhipuAI API."""
-        # Build messages
-        api_messages = []
-        if system_prompt:
-            api_messages.append({"role": "system", "content": system_prompt})
-        api_messages.append({"role": "user", "content": prompt})
-
-        try:
-            response = self.client.chat.completions.create(
-                model=self.config.zhipu_model,
-                messages=api_messages,
-                max_tokens=self.config.max_tokens,
-                temperature=self.config.temperature,
-                stream=True,
-            )
-            response_text = ""
-            for chunk in response:
-                if chunk.choices[0].delta.content:
-                    response_text += chunk.choices[0].delta.content
-            return response_text
-        except Exception as e:
-            raise RuntimeError(f"ZhipuAI streaming failed: {e}")
+            return json.loads(text)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"JSON parse failed at line {e.lineno}, col {e.colno}: {e.msg}")
