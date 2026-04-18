@@ -1,4 +1,7 @@
-"""Prompt templates for MultiAgentPaperCoder agents."""
+"""Prompt templates for MultiAgentPaperCoder agents.
+
+This module manages prompt templates for all agents.
+"""
 
 from pathlib import Path
 from typing import Dict, Any
@@ -53,44 +56,18 @@ class PromptManager:
             except Exception as e:
                 print(f"Warning: Failed to load {yaml_file}: {e}")
 
-    def _load_templates_from_txt(self, prompts_dir: Path):
-        """Load prompt templates from .txt files (legacy format)."""
-        import re
-
-        file_mapping = {
-            "analyzer.txt": "algorithm_analyzer",
-            "planner.txt": "code_planner",
-            "generator.txt": "code_generator",
-        }
-
-        for filename, template_name in file_mapping.items():
-            file_path = prompts_dir / filename
-            if file_path.exists():
-                with open(file_path, "r", encoding="utf-8") as f:
-                    template = f.read()
-                variables = list(set(re.findall(r"\{(\w+)\}", template)))
-                self.templates[template_name] = PromptTemplate(
-                    name=template_name,
-                    template=template,
-                    input_variables=variables,
-                    output_format={},
-                )
-
     def _load_templates(self):
         """Load all prompt templates from known locations."""
-        # Locations to search, in priority order
+        # Search in src/prompts directory
         possible_dirs = [
-            Path(__file__).parent,                # src/prompts/  (YAML files live here)
-            Path(__file__).parent.parent / "prompts",  # prompts/ at project root
+            Path(__file__).parent,  # src/prompts/
         ]
 
         for prompts_dir in possible_dirs:
             if not prompts_dir.exists():
                 continue
-            # Prefer YAML, fall back to TXT
+            # Prefer YAML format
             self._load_templates_from_yaml(prompts_dir)
-            if not self.templates:
-                self._load_templates_from_txt(prompts_dir)
             if self.templates:
                 break
 

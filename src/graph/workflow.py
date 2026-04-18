@@ -38,9 +38,9 @@ def _create_initial_state(pdf_path: str, config: Dict[str, Any] = None) -> Dict[
         "current_step": "start",
         "errors": [],
         "retry_count": 0,
-        "max_retries": config.get("max_retries",3) if config else 3,
+        "max_retries": config.get("max_retries", 3) if config else 3,
         "iteration_count": 0,
-        "max_iterations":5,
+        "max_iterations": 5,
     }
 
 
@@ -53,7 +53,7 @@ def document_analysis_node(state: PaperState) -> PaperState:
     Returns:
         Updated state
     """
-    from ..agents.document_analysis import DocumentAnalysisAgent
+    from ..agents.document_analysis_agent import DocumentAnalysisAgent
 
     agent = DocumentAnalysisAgent()
     result = agent(state)
@@ -70,7 +70,7 @@ def code_generation_node(state: PaperState) -> PaperState:
     Returns:
         Updated state
     """
-    from ..agents.code_generation import CodeGenerationAgent
+    from ..agents.code_generation_agent import CodeGenerationAgent
 
     config = {
         "output_dir": "./output/generated_code",
@@ -91,7 +91,7 @@ def code_verification_node(state: PaperState) -> PaperState:
     Returns:
         Updated state
     """
-    from ..agents.code_verification import CodeVerificationAgent
+    from ..agents.code_verification_agent import CodeVerificationAgent
 
     config = {
         "conda_env_name": os.getenv("CONDA_ENV_NAME", "py12pt"),
@@ -140,7 +140,7 @@ def should_continue_verification(state: PaperState) -> str:
     """
     verification = state.get("verification_result", {})
     iteration_count = state.get("iteration_count", 0)
-    max_iterations = state.get("max_iterations",5)
+    max_iterations = state.get("max_iterations", 5)
 
     # Check for repair needs
     if verification.get("needs_repair"):
@@ -298,14 +298,17 @@ class PaperCoderWorkflow:
             code = state["generated_code"]
             summary_lines.append(f"\n💻 Generated Code:")
             summary_lines.append(f"   Files: {code.get('total_files', 0)}")
-            summary_lines.append(f"   Directory: {code.get('code_dir', 'Unknown')}")
+            directory = code.get('code_dir', 'Unknown')
+            if directory:
+                summary_lines.append(f"   Directory: {directory}")
 
         # Validation result
         if state.get("validation_result"):
             val = state["validation_result"]
             summary_lines.append(f"\n✅ Validation:")
             summary_lines.append(f"   Status: {val.get('status', 'Unknown')}")
-            summary_lines.append(f"   Time: {val.get('execution_time', 0):.2f}s")
+            execution_time = val.get("execution_time", 0)
+            summary_lines.append(f"   Time: {execution_time:.2f}s")
 
             if val.get("status") == "failed":
                 summary_lines.append(f"\n   Error Log (first 500 chars):")
@@ -314,7 +317,7 @@ class PaperCoderWorkflow:
                 suggestions = val.get("fix_suggestions", [])
                 if suggestions:
                     summary_lines.append(f"\n   Suggestions:")
-                    for i, sugg in enumerate(suggestions,1):
+                    for i, sugg in enumerate(suggestions, 1):
                         summary_lines.append(f"   {i}. {sugg}")
 
         # Verification result
@@ -329,7 +332,7 @@ class PaperCoderWorkflow:
                     suggestions = verification.get("suggestions", [])
                     if suggestions:
                         summary_lines.append(f"\n   Suggestions:")
-                        for i, sugg in enumerate(suggestions,1):
+                        for i, sugg in enumerate(suggestions, 1):
                             summary_lines.append(f"   {i}. {sugg}")
 
         # Repair history
@@ -337,8 +340,9 @@ class PaperCoderWorkflow:
             repair_history = state["repair_history"]
             if repair_history:
                 summary_lines.append(f"\n🔧 Repair Attempts: {len(repair_history)}")
-                for i, entry in enumerate(repair_history,1):
-                    summary_lines.append(f"   {i}. Cause: {entry.get('root_cause', 'N/A')}, Fixed: {len(entry.get('files_fixed', []))} files")
+                for i, entry in enumerate(repair_history, 1):
+                    files_fixed = len(entry.get("files_fixed", []))
+                    summary_lines.append(f"   {i}. Cause: {entry.get('root_cause', 'N/A')}, Fixed: {files_fixed} files")
 
         # Errors
         if state.get("errors"):

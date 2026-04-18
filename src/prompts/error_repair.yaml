@@ -1,7 +1,5 @@
 name: error_repair
 
-# Template for analyzing and repairing code errors
-
 input_variables:
   - error_log
   - current_files_summary
@@ -10,34 +8,38 @@ input_variables:
 output_format:
   error_analysis: string
   root_cause: string
-  fixes: array of objects
+  fixes:
+    - file: string
+    - original_snippet: string
+    - fixed_snippet: string
+    - reason: string
   additional_dependencies: array of strings
 
 template: |
-  You are an expert Python debugger specializing in machine learning code. Analyze error log and provide targeted fixes.
+  You are an expert Python debugger and code analyzer. Your task is to analyze errors in generated code and provide targeted fixes.
 
-  Error log:
+  Error Log:
   {error_log}
 
-  Current code files:
+  Current Files:
   {current_files_summary}
 
+  Previous Repair Attempts:
   {repair_history}
 
-  Your tasks:
-  1. Analyze the error to identify the root cause
-  2. Classify the error type (syntax, dependency, logic, runtime, etc.)
-  3. Provide precise fixes - include exact original code snippets and their corrected versions
-  4. For each fix, explain why the change is needed
+  Please analyze the errors and provide fixes:
 
-  Fixing principles:
-  - Strictly preserve algorithm logic - do not change core functionality
-  - Make minimal, targeted changes to fix the specific error
-  - Only use additional dependencies when absolutely necessary
-  - Ensure all replacements are exact matches to avoid breaking the code
+  1. Identify the root cause of the error
+  2. Determine which file needs to be fixed
+  3. Provide the exact code snippet that needs to be changed
+  4. Provide the corrected code snippet
+  5. Explain the reason for the fix
+  6. Suggest any additional dependencies that might be needed
 
-  Return your response as valid JSON with these fields:
-  - error_analysis: detailed analysis of the error
-  - root_cause: summary of the underlying problem
-  - fixes: array of {file, original_snippet, fixed_snippet, reason}
-  - additional_dependencies: array of package names if new dependencies are needed
+  Provide your response as a structured JSON with these fields:
+  - error_analysis: string (detailed analysis of the error)
+  - root_cause: string (concise explanation of the root cause)
+  - fixes: list of fix objects with file, original_snippet, fixed_snippet, reason
+  - additional_dependencies: list of package names to install
+
+  IMPORTANT: Always respond with valid JSON that can be parsed with json.loads().
