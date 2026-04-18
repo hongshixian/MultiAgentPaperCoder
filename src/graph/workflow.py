@@ -5,6 +5,8 @@ with state management, conditional routing, and loop support.
 """
 
 from typing import Dict, Any
+from pathlib import Path
+from datetime import datetime
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -14,6 +16,29 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from ..state import PaperState
+
+
+def _generate_output_dir(pdf_path: str, base_dir: str = "./output") -> str:
+    """Generate unique output directory based on PDF filename and timestamp.
+
+    Args:
+        pdf_path: Path to PDF file
+        base_dir: Base output directory
+
+    Returns:
+        Path string for unique output directory
+    """
+    # Extract PDF filename without extension
+    pdf_name = Path(pdf_path).stem
+
+    # Create timestamp string
+    time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Combine timestamp and PDF name
+    output_name = f"{time_str}_{pdf_name}"
+
+    # Create full path
+    return str(Path(base_dir) / output_name)
 
 
 def _create_initial_state(pdf_path: str, config: Dict[str, Any] = None) -> Dict[str, Any]:
