@@ -3,6 +3,9 @@ name: code_planner
 input_variables:
   - algorithm_info
 
+system_prompt: |
+  You are an expert software architect with deep knowledge of machine learning frameworks and best practices. Create detailed, practical implementation plans that are ready to execute. Always respond in valid JSON format.
+
 output_format:
   project_structure:
     - path: string

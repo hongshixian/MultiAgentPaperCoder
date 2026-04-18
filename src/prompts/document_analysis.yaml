@@ -5,6 +5,9 @@ input_variables:
   - title
   - abstract
 
+system_prompt: |
+  You are an expert in machine learning and algorithm research. You specialize in understanding and extracting algorithm details from research papers. Always provide accurate, well-structured responses in JSON format.
+
 output_format:
   algorithm_name: string
   algorithm_type: string

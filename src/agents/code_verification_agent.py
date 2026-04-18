@@ -163,7 +163,7 @@ class CodeVerificationAgent(BaseAgent):
                 code_output=code_output
             )
 
-            system_prompt = """You are an academic research evaluation expert. Compare experimental results and assess reproduction quality."""
+            system_prompt = PROMPTS.get_system_prompt("result_verification")
 
             verification = self.llm_client.generate_structured(
                 prompt=prompt,

@@ -103,7 +103,7 @@ Data Flow:
             algorithm_info=algorithm_info,
         )
 
-        system_prompt = """You are an expert software architect with deep knowledge of machine learning frameworks and best practices. Create detailed, practical implementation plans that are ready to execute. Always respond in valid JSON format."""
+        system_prompt = PROMPTS.get_system_prompt("code_planner")
 
         code_plan = self.llm_client.generate_structured(
             prompt=prompt,
@@ -170,8 +170,8 @@ Entry Points: {', '.join(code_plan.get('entry_points', []))}
             code_plan=code_plan_str,
         )
 
-        # Add system prompt
-        system_prompt = """You are an expert Python developer. Generate clean, production-ready code that follows best practices. Include proper error handling, logging, and documentation. Always respond in valid JSON format."""
+        # Get system prompt from template
+        system_prompt = PROMPTS.get_system_prompt("code_generator")
 
         # Call LLM to generate code
         generated_data = self.llm_client.generate_structured(

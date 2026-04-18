@@ -44,60 +44,65 @@ def _create_initial_state(pdf_path: str, config: Dict[str, Any] = None) -> Dict[
     }
 
 
-def document_analysis_node(state: PaperState) -> PaperState:
+def document_analysis_node(state: PaperState, config: Dict[str, Any] = None) -> PaperState:
     """LangGraph node for document analysis.
 
     Args:
         state: Current state
+        config: Optional configuration dictionary
 
     Returns:
         Updated state
     """
     from ..agents.document_analysis_agent import DocumentAnalysisAgent
 
-    agent = DocumentAnalysisAgent()
+    agent = DocumentAnalysisAgent(config or {})
     result = agent(state)
     print("✓ Document analysis completed")
     return result
 
 
-def code_generation_node(state: PaperState) -> PaperState:
+def code_generation_node(state: PaperState, config: Dict[str, Any] = None) -> PaperState:
     """LangGraph node for code generation.
 
     Args:
         state: Current state
+        config: Optional configuration dictionary
 
     Returns:
         Updated state
     """
     from ..agents.code_generation_agent import CodeGenerationAgent
 
-    config = {
-        "output_dir": "./output/generated_code",
-    }
+    # Merge provided config with defaults
+    agent_config = (config or {}).copy()
+    if "output_dir" not in agent_config:
+        agent_config["output_dir"] = "./output/generated_code"
 
-    agent = CodeGenerationAgent(config)
+    agent = CodeGenerationAgent(agent_config)
     result = agent(state)
     print("✓ Code generation completed")
     return result
 
 
-def code_verification_node(state: PaperState) -> PaperState:
+def code_verification_node(state: PaperState, config: Dict[str, Any] = None) -> PaperState:
     """LangGraph node for code verification.
 
     Args:
         state: Current state
+        config: Optional configuration dictionary
 
     Returns:
         Updated state
     """
     from ..agents.code_verification_agent import CodeVerificationAgent
 
-    config = {
-        "conda_env_name": os.getenv("CONDA_ENV_NAME", "py12pt"),
-    }
+    # Merge provided config with defaults
+    agent_config = (config or {}).copy()
+    if "conda_env_name" not in agent_config:
+        agent_config["conda_env_name"] = os.getenv("CONDA_ENV_NAME", "py12pt")
 
-    agent = CodeVerificationAgent(config)
+    agent = CodeVerificationAgent(agent_config)
     result = agent(state)
     validation_status = result.get("validation_result", {}).get("status", "unknown")
     verification = result.get("verification_result", {})
@@ -110,18 +115,19 @@ def code_verification_node(state: PaperState) -> PaperState:
     return result
 
 
-def error_repair_node(state: PaperState) -> PaperState:
+def error_repair_node(state: PaperState, config: Dict[str, Any] = None) -> PaperState:
     """LangGraph node for error repair.
 
     Args:
         state: Current state
+        config: Optional configuration dictionary
 
     Returns:
         Updated state
     """
     from ..agents.error_repair_agent import ErrorRepairAgent
 
-    agent = ErrorRepairAgent()
+    agent = ErrorRepairAgent(config or {})
     iteration = state.get("iteration_count", 0) + 1
     state["iteration_count"] = iteration
     print(f"⚠ Attempting error repair (iteration {iteration})")
@@ -169,14 +175,30 @@ def create_workflow(config: Dict[str, Any] = None) -> StateGraph:
     Returns:
         Compiled StateGraph workflow
     """
+    # Store config for use in node functions
+    workflow_config = config or {}
+
+    # Create node functions with config captured via closure
+    def doc_analysis_node(state: PaperState) -> PaperState:
+        return document_analysis_node(state, workflow_config)
+
+    def code_gen_node(state: PaperState) -> PaperState:
+        return code_generation_node(state, workflow_config)
+
+    def code_verify_node(state: PaperState) -> PaperState:
+        return code_verification_node(state, workflow_config)
+
+    def err_repair_node(state: PaperState) -> PaperState:
+        return error_repair_node(state, workflow_config)
+
     # Create state graph
     workflow = StateGraph(PaperState)
 
     # Add all nodes
-    workflow.add_node("document_analysis", document_analysis_node)
-    workflow.add_node("code_generation", code_generation_node)
-    workflow.add_node("code_verification", code_verification_node)
-    workflow.add_node("error_repair", error_repair_node)
+    workflow.add_node("document_analysis", doc_analysis_node)
+    workflow.add_node("code_generation", code_gen_node)
+    workflow.add_node("code_verification", code_verify_node)
+    workflow.add_node("error_repair", err_repair_node)
 
     # Set entry point
     workflow.set_entry_point("document_analysis")

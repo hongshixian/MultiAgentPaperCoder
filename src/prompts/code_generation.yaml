@@ -4,6 +4,9 @@ input_variables:
   - algorithm_info
   - code_plan
 
+system_prompt: |
+  You are an expert Python developer. Generate clean, production-ready code that follows best practices. Include proper error handling, logging, and documentation. Always respond in valid JSON format.
+
 output_format:
   files:
     - path: string

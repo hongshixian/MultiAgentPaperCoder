@@ -16,11 +16,13 @@ class PromptTemplate:
         template: str,
         input_variables: list[str],
         output_format: Dict[str, Any],
+        system_prompt: str = "",
     ):
         self.name = name
         self.template = template
         self.input_variables = input_variables
         self.output_format = output_format
+        self.system_prompt = system_prompt
 
 
 class PromptManager:
@@ -46,12 +48,14 @@ class PromptManager:
                 input_variables = data.get("input_variables", [])
                 output_format = data.get("output_format", {})
                 template = data.get("template", "")
+                system_prompt = data.get("system_prompt", "")
 
                 self.templates[template_name] = PromptTemplate(
                     name=template_name,
                     template=template,
                     input_variables=input_variables,
                     output_format=output_format,
+                    system_prompt=system_prompt,
                 )
             except Exception as e:
                 print(f"Warning: Failed to load {yaml_file}: {e}")
@@ -91,6 +95,18 @@ class PromptManager:
                 f"Missing required variables for template '{name}': {missing}"
             )
         return template.template.format(**kwargs)
+
+    def get_system_prompt(self, name: str) -> str:
+        """Get the system prompt for a template.
+
+        Args:
+            name: Template name
+
+        Returns:
+            System prompt string (empty string if not defined)
+        """
+        template = self.get_template(name)
+        return template.system_prompt
 
 
 # Global singleton

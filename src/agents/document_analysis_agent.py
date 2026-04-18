@@ -114,8 +114,8 @@ _content and algorithm_analysis
             abstract=paper_content.get("abstract", ""),
         )
 
-        # Add system prompt for better results
-        system_prompt = """You are an expert in machine learning and algorithm research. You specialize in understanding and extracting algorithm details from research papers. Always provide accurate, well-structured responses in JSON format."""
+        # Get system prompt from template
+        system_prompt = PROMPTS.get_system_prompt("algorithm_analyzer")
 
         # Call LLM to analyze
         algorithm_analysis = self.llm_client.generate_structured(

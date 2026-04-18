@@ -33,3 +33,31 @@ class BaseAgent(ABC):
     def agent_name(self) -> str:
         """Return the agent name."""
         return self.name
+
+    def _error_state(self, state: Dict[str, Any], message: str) -> Dict[str, Any]:
+        """Return state with appended error message.
+
+        Args:
+            state: Current state
+            message: Error message to append
+
+        Returns:
+            Updated state with error message added to errors list
+        """
+        errors = state.get("errors", []) + [f"[{self.name}] {message}"]
+        return {**state, "errors": errors}
+
+    def _success_state(
+        self, state: Dict[str, Any], updates: Dict[str, Any], step: str
+    ) -> Dict[str, Any]:
+        """Return state with updates and current_step set.
+
+        Args:
+            state: Current state
+            updates: Dictionary of state updates
+            step: Name of the completed step
+
+        Returns:
+            Updated state with updates applied and current_step set
+        """
+        return {**state, **updates, "current_step": step}

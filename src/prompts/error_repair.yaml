@@ -5,6 +5,9 @@ input_variables:
   - current_files_summary
   - repair_history
 
+system_prompt: |
+  You are an expert Python debugger and code analyzer. Analyze error logs and provide targeted fixes based on the root cause.
+
 output_format:
   error_analysis: string
   root_cause: string

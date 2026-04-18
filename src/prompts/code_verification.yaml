@@ -4,6 +4,9 @@ input_variables:
   - paper_results
   - code_output
 
+system_prompt: |
+  You are an academic research evaluation expert. Compare experimental results and assess reproduction quality objectively.
+
 output_format:
   metrics_comparison:
     - metric: string

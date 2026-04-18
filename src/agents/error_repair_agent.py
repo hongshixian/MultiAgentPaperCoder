@@ -66,7 +66,7 @@ class ErrorRepairAgent(BaseAgent):
                 repair_history=repair_history_str
             )
 
-            system_prompt = """You are an expert Python debugger. Analyze error logs and provide targeted fixes."""
+            system_prompt = PROMPTS.get_system_prompt("error_repair")
 
             repair_plan = self.llm_client.generate_structured(
                 prompt=prompt,
