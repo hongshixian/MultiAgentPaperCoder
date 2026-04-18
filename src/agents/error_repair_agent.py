@@ -4,7 +4,7 @@ from typing import Dict, Any, List
 import os
 
 from .base import BaseAgent
-from ..tools.llm_client import LLMClient
+from ..llms.llm_client import LLMClient
 from ..prompts import PROMPTS
 
 

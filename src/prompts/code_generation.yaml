@@ -1,4 +1,4 @@
-name: code_generation
+name: code_generator
 
 input_variables:
   - algorithm_info

@@ -1,4 +1,4 @@
-name: document_analysis
+name: algorithm_analyzer
 
 input_variables:
   - paper_content

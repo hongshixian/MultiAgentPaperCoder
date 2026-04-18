@@ -25,9 +25,6 @@ class PaperState(TypedDict, total=False):
     # Code generation result
     generated_code: Optional[Dict[str, Any]]
 
-    # Environment configuration result
-    env_config: Optional[Dict[str, Any]]
-
     # Validation result
     validation_result: Optional[Dict[str, Any]]
 

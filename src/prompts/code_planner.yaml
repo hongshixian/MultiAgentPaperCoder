@@ -1,0 +1,48 @@
+name: code_planner
+
+input_variables:
+  - algorithm_info
+
+output_format:
+  project_structure:
+    - path: string
+    - description: string
+    - type: string
+  implementation_steps: array of strings
+  dependencies:
+    python_packages: array of strings
+    system_packages: array of strings
+  entry_points: array of strings
+  test_plan: string
+
+template: |
+  You are an expert software architect with deep knowledge of machine learning frameworks and best practices. Your task is to create a detailed implementation plan for reproducing the algorithm described below.
+
+  Algorithm Information:
+  {algorithm_info}
+
+  Please create a comprehensive implementation plan with the following components:
+
+  1. **Project Structure**: Define the file and directory structure for the project. For each file, specify:
+     - path: relative path from project root
+     - description: brief explanation of the file's purpose
+     - type: "module", "config", "data", "script", or "test"
+
+  2. **Implementation Steps**: List the step-by-step implementation tasks in order. Each step should be specific and actionable.
+
+  3. **Dependencies**:
+     - python_packages: list of Python packages with versions (e.g., "torch>=2.0.0")
+     - system_packages: any system-level dependencies
+
+  4. **Entry Points**: List the main entry point scripts (e.g., main.py, train.py)
+
+  5. **Test Plan**: Brief description of how to test the implementation
+
+  Provide your response as a structured JSON with these fields:
+  - project_structure: list of file objects
+  - implementation_steps: list of strings
+  - dependencies: dict with python_packages and system_packages arrays
+  - entry_points: list of strings
+  - test_plan: string
+
+  IMPORTANT: Always respond with valid JSON that can be parsed with json.loads().

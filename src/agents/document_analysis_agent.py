@@ -8,7 +8,7 @@ import os
 
 from .base import BaseAgent
 from ..tools.pdf_parser import PDFParser, ParserConfig
-from ..tools.llm_client import LLMClient
+from ..llms.llm_client import LLMClient
 from ..prompts import PROMPTS
 
 

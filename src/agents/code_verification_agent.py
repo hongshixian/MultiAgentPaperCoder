@@ -7,7 +7,7 @@ from typing import Dict, Any
 
 from .base import BaseAgent
 from ..tools.code_executor import CodeExecutor, ExecutorConfig
-from ..tools.llm_client import LLMClient
+from ..llms.llm_client import LLMClient
 from ..prompts import PROMPTS
 
 

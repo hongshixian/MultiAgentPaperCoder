@@ -1,4 +1,4 @@
-name: code_verification
+name: result_verification
 
 input_variables:
   - paper_results
