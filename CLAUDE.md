@@ -10,14 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Basic usage - process a PDF paper
 python -m src.main --pdf path/to/paper.pdf
 
-# With custom output directory
-python -m src.main --pdf paper.pdf --output-dir ./my_output
-
-# Specify conda environment for code validation
-python -m src.main --pdf paper.pdf --conda-env py12pt
-
-# Skip code validation step
-python -m src.main --pdf paper.pdf --skip-validation
+# With custom configuration file
+python -m src.main --pdf paper.pdf --config config/custom.yaml
 
 # Enable verbose output
 python -m src.main --pdf paper.pdf --verbose
@@ -26,17 +20,21 @@ python -m src.main --pdf paper.pdf --verbose
 ### Running Tests
 
 ```bash
-# Basic functionality tests
-python examples/test_simple.py
+# Run all tests with pytest
+pytest test_cases/
 
-# Test with actual PDF (requires a PDF file)
-python test_with_pdf.py --pdf paper_examples/your_paper.pdf
+# Run specific test categories
+pytest test_cases/unit/
+pytest test_cases/integration/
 
-# Test ZhipuAI integration
-python test_zhipu.py
+# Run specific test file
+pytest test_cases/unit/test_basic_imports.py
 
-# Test complete workflow
-python test_workflow.py
+# Run with verbose output
+pytest test_cases/ -v
+
+# Run specific test
+pytest test_cases/unit/test_config.py::test_app_config_creation
 ```
 
 ### Development Setup
@@ -55,7 +53,7 @@ cp .env.example .env
 
 ## Architecture Overview
 
-MultiAgentPaperCoder is a multi-agent system that automates the reproduction of research paper code. The system follows a sequential workflow through specialized agents:
+MultiAgentPaperCoder is a multi-agent system that automates the reproduction of research paper code. The system follows a sequential workflow through specialized agents with an iterative repair mechanism.
 
 ### Agent Layer
 
@@ -81,34 +79,75 @@ All agents inherit from `BaseAgent` (src/agents/base.py) and implement the `__ca
    - Writes files to output directory
    - Uses LLM for code generation with structured JSON output
 
-5. **CodeValidatorAgent** (`src/agents/code_validator.py`)
+5. **EnvConfigAgent** (`src/agents/env_config_agent.py`)
+   - Validates and configures the execution environment
+   - Checks conda environment availability
+   - Sets up dependencies
+
+6. **CodeValidatorAgent** (`src/agents/code_validator.py`)
    - Executes generated code in isolated conda environment
    - Monitors execution, captures errors, provides fix suggestions
    - Uses CodeExecutor tool
 
-6. **PaperCoderSuperAgent** (`src/agents/super_agent.py`)
+7. **ResultVerificationAgent** (`src/agents/result_verification_agent.py`)
+   - Verifies execution results meet expected outcomes
+   - Assesses quality of generated code execution
+   - Determines if repair or regeneration is needed
+
+8. **ErrorRepairAgent** (`src/agents/error_repair_agent.py`)
+   - Analyzes errors from validation
+   - Generates fixes for identified issues
+   - Updates code files with repairs
+
+9. **PaperCoderSuperAgent** (`src/agents/super_agent.py`)
    - Coordinates workflow (mostly symbolic; actual coordination is in workflow.py)
    - Provides status reporting
 
 ### Workflow Orchestration
 
-**PaperCoderWorkflow** (`src/graph/workflow.py`) orchestrates the sequential execution:
+**PaperCoderWorkflow** (`src/graph/workflow.py`) orchestrates the sequential execution with iterative repair:
 - Creates initial state with `PaperState` structure
-- Determines next step based on current state and errors
-- Handles retry logic for failed code generation
+- Determines next step based on current state, errors, and verification results
+- Handles retry logic with iteration counter (max_iterations, default: 5)
 - Generates execution summaries
+
+**Workflow flow:**
+```
+start → pdf_reading → algorithm_analysis → code_planning → code_generation → env_config → validation → result_verification
+                                                                                                                    ↓
+result_verification (needs_repair) → error_repair → validation ↗
+result_verification (needs_regeneration) → code_generation ↗
+```
 
 ### State Management
 
 **PaperState** (`src/state/__init__.py`) is a TypedDict that flows through the workflow:
-- Input: `pdf_path`
-- Results: `paper_content`, `algorithm_analysis`, `code_plan`, `generated_code`, `validation_result`
-- Control: `current_step`, `errors`, `retry_count`, `max_retries`
+
+**Input fields:**
+- `pdf_path`: Path to the PDF file
+
+**Result fields:**
+- `paper_content`: PDF parsing result
+- `algorithm_analysis`: Algorithm extraction result
+- `code_plan`: Code planning result
+- `generated_code`: Generated code metadata
+- `env_config`: Environment configuration result
+- `validation_result`: Code execution validation result
+- `verification_result`: Result quality assessment
+- `repair_history`: List of repair attempts
+
+**Control fields:**
+- `current_step`: Current workflow step
+- `errors`: Accumulated error messages
+- `retry_count`: Retry counter (legacy)
+- `max_retries`: Maximum retry attempts (default: 3)
+- `iteration_count`: Current iteration for repair loop
+- `max_iterations`: Maximum iterations for repair loop (default: 5)
 
 ### Tool Layer
 
 1. **LLMClient** (`src/tools/llm_client.py`)
-   - Unified interface for both Claude and ZhipuAI APIs
+   - Unified interface for both Claude and ZhipuAI APIs via LangChain
    - Supports: `generate()`, `generate_structured()` with JSON parsing, `stream_generate()`
    - Configuration via `.env` file (LLM_PROVIDER, ANTHROPIC_API_KEY, ZHIPU_API_KEY, etc.)
    - JSON parsing handles markdown code blocks, trailing commas, malformed JSON
@@ -123,7 +162,32 @@ All agents inherit from `BaseAgent` (src/agents/base.py) and implement the `__ca
 
 ## Configuration
 
-Configuration is managed through `.env` file:
+Configuration can be provided through multiple sources (priority order: CLI args > YAML config > .env file > defaults):
+
+### YAML Configuration (`config/default.yaml`)
+
+```yaml
+llm:
+  provider: zhipu  # or "claude"
+  claude:
+    model: claude-3-5-sonnet-20241022
+  zhipu:
+    model: glm-5
+    base_url: https://open.bigmodel.cn/api/paas/v4
+  max_tokens: 4096
+  temperature: 0.7
+
+execution:
+  conda_env: py12pt
+  output_dir: ./output
+  max_retries: 3
+  timeout_seconds: 300
+
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR
+```
+
+### Environment Variables (`.env`)
 
 ```bash
 # LLM Provider Selection
@@ -138,13 +202,67 @@ ZHIPU_API_KEY=your_key
 ZHIPU_MODEL=glm-5
 ZHIPU_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 
+# Common LLM Configuration
+LLM_MAX_TOKENS=4096
+LLM_TEMPERATURE=0.7
+
 # Execution
 CONDA_ENV_NAME=py12pt
 OUTPUT_DIR=./output/generated_code
 MAX_RETRIES=3
 TIMEOUT_SECONDS=300
-LLM_MAX_TOKENS=4096
-LLM_TEMPERATURE=0.7
+ENABLE_CACHE=true
+
+# Logging
+LOG_LEVEL=INFO
+LOG_FILE=./output/logs/multi_agent.log
+
+# PDF Parser Configuration
+PDF_PARSER_ENGINE=pdfplumber  # or "PyPDF2"
+EXTRACT_FORMULAS=true
+EXTRACT_FIGURES=true
+```
+
+## Prompt Templates
+
+Prompt templates are managed by `PromptManager` (`src/prompts/__init__.py`) which supports two formats:
+
+### YAML Format (Preferred)
+
+Located in `src/prompts/*.yaml`:
+- `algorithm_analyzer.yaml` - Algorithm extraction prompts
+- `code_planner.yaml` - Code planning prompts
+- `code_generator.yaml` - Code generation prompts
+- `env_config.yaml` - Environment configuration prompts
+- `result_verification.yaml` - Result verification prompts
+- `error_repair.yaml` - Error repair prompts
+
+YAML format includes metadata:
+```yaml
+name: template_name
+input_variables: [var1, var2]
+output_format:
+  field: type
+template: |
+  Your prompt here with {var1} and {var2}
+```
+
+### TXT Format (Legacy)
+
+Located in `prompts/*.txt`:
+- `analyzer.txt` - Algorithm extraction prompts
+- `planner.txt` - Code planning prompts
+- `generator.txt` - Code generation prompts
+
+Usage in agents:
+```python
+from ..prompts import PROMPTS
+
+prompt = PROMPTS.format_template(
+    "code_generator",
+    algorithm_info=...,
+    code_plan=...,
+)
 ```
 
 ## Adding New Agents
@@ -185,19 +303,12 @@ elif next_step == "my_custom_step":
     state = self.my_custom_agent(state)
 ```
 
-## Prompt Templates
-
-Prompt templates are stored in `prompts/` directory:
-- `analyzer.txt` - Algorithm extraction prompts
-- `planner.txt` - Code planning prompts  
-- `generator.txt` - Code generation prompts
-
-Agents load these templates via `_load_prompt_template()` with fallback to hardcoded defaults.
-
 ## Key Design Decisions
 
-- **Sequential workflow**: Agents execute in order; each agent depends on previous agent's output
-- **Retry logic**: Code validation failures trigger retry of code generation (up to max_retries)
-- **Structured LLM output**: `generate_structured()` enforces JSON output with robust parsing
-- **Multi-LLM support**: Architecture abstracts LLM provider selection
+- **Sequential workflow with repair loop**: Agents execute in order with an iterative repair mechanism for fixing execution errors
+- **Repair logic**: Result verification failures trigger either error repair (fix issues) or code regeneration (up to max_iterations, default: 5)
+- **Structured LLM output**: `generate_structured()` enforces JSON output with robust parsing (handles markdown blocks, trailing commas, malformed JSON)
+- **Multi-LLM support via LangChain**: Architecture abstracts LLM provider selection (Claude via LangChain-Anthropic or ZhipuAI via OpenAI-compatible API)
+- **Dual prompt format support**: YAML-based prompts in `src/prompts/` (preferred, with metadata) and legacy TXT prompts in `prompts/`
 - **Sandboxed execution**: Generated code runs in isolated conda environment for safety
+- **Configurable output paths**: Output directories are generated with timestamps and PDF filenames for organization
