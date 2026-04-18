@@ -48,16 +48,17 @@ MultiAgentPaperCoder/
 │   └── tools/                  # 工具层
 │       ├── __init__.py
 │       ├── pdf_reader.py       # PDF 解析工具
-│       ├── llm_client.py       # LLM 客户端（基于 LangChain）
-│       └── code_executor.py    # 代码执行器
+│       ├── code_executor.py    # 代码执行器
+│   └── llms/                   # LLM 抽象层
+│           ├── __init__.py
+│           ├── base.py           # LLM 基类
+│           └── llm_client.py    # LLM 客户端（基于 LangChain）
 │   └── prompts/                # 提示词管理
 │       ├── __init__.py         # PromptManager
 │       ├── document_analysis.yaml
 │       ├── code_generation.yaml
 │       ├── code_verification.yaml
 │       └── error_repair.yaml
-├── config/                    # 配置文件
-│   └── default.yaml
 ├── test_cases/                # 测试用例
 │   ├── unit/
 │   └── integration/
