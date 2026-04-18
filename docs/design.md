@@ -387,27 +387,6 @@ EXTRACT_FORMULAS=true
 EXTRACT_FIGURES=true
 ```
 
-### YAML 配置（config/default.yaml）
-
-```yaml
-llm:
-  provider: zhipu
-  zhipu:
-    model: glm-4.7
-    base_url: https://open.bigmodel.cn/api/paas/v4
-  max_tokens: 4096
-  temperature: 0.7
-
-execution:
-  conda_env: py12pt
-  output_dir: ./output
-  max_retries: 3
-  timeout_seconds: 300
-
-logging:
-  level: INFO
-```
-
 ## 提示词管理
 
 ### 提示词格式
@@ -469,21 +448,6 @@ rich>=13.0.0
 - Python 3.12+
 - CUDA（如果涉及 GPU 训练）
 
-## 安全考虑
-
-1. **代码沙箱执行**：生成的代码在隔离的 conda 环境中执行
-2. **输入验证**：严格验证 PDF 文件路径
-3. **权限控制**：限制代码执行的文件系统访问权限
-4. **资源限制**：设置内存和 CPU 使用上限
-5. **超时控制**：设置最大执行时间，避免无限运行
-
-## 性能优化
-
-1. **LLM 调用缓存**：缓存相同的 LLM 查询结果
-2. **并行处理**：独立的任务可以并行执行
-3. **流式输出**：支持实时输出生成进度
-4. **增量更新**：支持只重新执行失败的步骤
-
 ## 测试环境
 
 ### 硬件配置
@@ -502,10 +466,8 @@ rich>=13.0.0
 
 ## 可扩展性
 
-1. **插件化 Agent**：支持动态添加新的 Agent
-2. **自定义 Prompt**：支持用户自定义提示词模板
-3. **多 LLM 支持**：支持切换不同的 LLM 后端
-4. **分布式执行**：未来支持多节点并行执行
+1. **自定义 Prompt**：支持用户自定义提示词模板
+2. **多 LLM 支持**：支持切换不同的 LLM 后端
 
 ## 文档说明
 
