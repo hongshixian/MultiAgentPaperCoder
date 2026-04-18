@@ -45,6 +45,7 @@ class AppConfig:
 
         # Derived configuration
         current_output_dir: Optional[Path] = None,
+        pdf_name: Optional[str] = None,
     ):
         # LLM Configuration
         self.llm_provider = llm_provider or os.getenv("LLM_PROVIDER", "zhipu")
@@ -70,6 +71,7 @@ class AppConfig:
 
         # Derived configuration
         self.current_output_dir = current_output_dir
+        self.pdf_name = pdf_name
 
     def validate(self) -> list:
         """Validate configuration and return list of errors.
@@ -193,6 +195,19 @@ class AppConfig:
             f"output_dir={self.default_output_dir}, "
             f"conda_env={self.conda_env})"
         )
+
+    @property
+    def conda_env_name(self) -> str:
+        """Backward-compatible alias used by older tests and callers."""
+        return self.conda_env
+
+    def get_output_dir(self) -> str:
+        """Backward-compatible helper for older tests."""
+        pdf_name = self.pdf_name or "paper.pdf"
+        base_dir = self.default_output_dir
+        if "generated_code" not in base_dir.parts:
+            base_dir = base_dir / "generated_code"
+        return str(self.generate_output_path(Path(pdf_name), base_dir=base_dir))
 
 
 def create_default_config() -> AppConfig:
