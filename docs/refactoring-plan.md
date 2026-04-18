@@ -1,281 +1,325 @@
-# 代码重构计划
+# MultiAgentPaperCoder 代码重构计划
 
-## 背景
+## 概述
 
-基于 `code-architecture.md` 设计文档，MultiAgentPaperCoder 项目需要进行全面的代码重构。当前代码存在一些架构不一致的问题，需要统一规划进行系统性改进。
+本文档基于对《项目设计Document毕业论文参考.md》、`docs/design.md` 和 `docs/code-architecture.md` 三份设计文档的审阅，对照当前代码实际状态，梳理出设计目标与实现现状之间的差距，并制定分阶段的重构计划。
 
-## 重构目标
-
-1. **统一 LLM 客户端接口**：支持 LangChain 和 LangGraph 的 Runnable 调用习惯
-2. **优化流式输出**：实现完整的流式输出支持，适配 LangChain 的 streaming 机制
-3. **完善 LangGraph 集成**：充分利用 LangGraph 的状态管理和路由能力
-4. **简化目录结构**：将 PDF Reader 移至 Tool 层，优化 agents 组织
-5. **完善 Tool 层**：扩展工具能力，提高复用性
-
-## 重构原则
-
-- **渐进式重构**：分阶段进行，每阶段可独立验证和回滚
-- **保持向后兼容**：重构过程中保持现有功能可用
-- **拥抱 LangChain 生态**：充分利用 LangChain 的最佳实践
-- **类型安全**：添加完整的类型注解
-- **测试驱动**：每步重构都伴随测试覆盖
-
-## 重构阶段
-
-### 第一阶段：LLM 客户端流式输出支持
-
-**目标**：实现 LLM 客户端支持流式输出，适配 LangChain 和 LangGraph 的 Runnable 调用习惯
-
-#### 1.1 LLM 基类抽象（`src/llms/base.py`）
-- [ ] 定义 `BaseLLM` 抽象基类，统一 LLM 接口
-- [ ] 支持同步和异步调用
-- [ ] 支持流式输出（同步返回生成器，异步返回 AsyncIterator）
-- [ ] 添加 Token 统计功能
-- [ ] 添加重试机制
-- [ ] 添加错误处理
-
-#### 1.2 流式输出协议定义
-- [ ] 定义 `StreamingOutput` 数据类，封装流式输出结果
-- [ ] 支持 `chunks` 生成和 `delta` 增量更新
-- [ ] 支持完整的元数据（finish_reason、usage_stats 等）
-
-#### 1.3 LangChain Runnable 适配
-- [ ] LangGraph 节点接收 `Runnable` 而非字符串
-- [ ] 适配 LangChain 的 `invoke()` 方法
-- [ ] 支持 LangChain 的 `ainvoke()` 异步调用
-- [ ] 保持与现有 API 兼容
-
-#### 1.4 LLM 客户端实现（`src/llms/llm_client.py`）
-- [ ] 实现基于 `BaseLLM` 的 LLM 客户端
-- [ ] 实现 `generate()` 方法：同步调用，返回完整响应
-- [ ] 实现 `stream_generate()` 方法：流式输出，返回 `StreamingOutput`
-- [ ] 实现 `ainvoke()` 方法：异步调用，返回 `AsyncIterator`
-- [ ] 使用 `Runnable` 协议适配 LangGraph 调用
-
-#### 1.5 测试和验证
-- [ ] 添加单元测试
-- [ ] 验证流式输出正确性
-- [ ] 验证与 LangChain Runnable 的兼容性
-
-**依赖**：LangChain >=0.2.0, LangGraph >=0.2.0  
-**时间估算**：1 周
+重构的核心原则：**先修复阻断性问题（运行时错误），再消除架构冗余，最后补齐缺失功能**。
 
 ---
 
-### 第二阶段：LangGraph 工作流完全迁移
+## 现状分析：设计与实现的差距
 
-**目标**：将现有工作流完全迁移到 LangGraph 框架，充分利用其能力
+### 1. 代码可运行性问题（阻断性）
 
-#### 2.1 LangGraph 状态机重构
-- [ ] 使用 LangGraph 的 `StateGraph` 定义工作流状态
-- [ ] 定义 `PaperState` TypedDict，包含所有工作流状态
-- [ ] 移除手动状态管理代码
-- [ ] 使用 LangGraph 的条件路由（conditional_edges）
+当前代码存在以下导致运行时崩溃的问题：
 
-#### 2.2 节点函数标准化
-- [ ] 将现有 Agent 的 `__call__` 方法适配为 LangGraph 节点函数
-- [ ] 确保节点函数签名符合 LangGraph 规范
-- [ ] 添加类型注解和文档
+| 问题 | 位置 | 影响 |
+|------|------|------|
+| Prompt 模板名称不匹配 | Agent 引用的模板名与 YAML 文件定义的 name 不一致 | 运行时 KeyError 崩溃 |
+| LLM Client 导入路径错误 | 所有 Agent 从 `src/tools/llm_client.py` 导入，该文件未继承 BaseLLM | 架构不一致 |
+| 缺少部分 Prompt YAML 文件 | Agent 引用的模板无对应 YAML 文件 | 运行时 KeyError |
 
-#### 2.3 边和循环支持
-- [ ] 使用 LangGraph 的循环边（conditional_edges）实现迭代
-- [ ] 添加 `END` 节点处理
-- [ ] 添加最大迭代次数控制
+**具体模板名称不匹配详情：**
 
-#### 2.4 持久化和可视化
-- [ ] 使用 LangGraph 的持久化功能
-- [ ] 添加工作流可视化支持（可选）
+| Agent 文件 | 引用的模板名 | YAML 文件中的 name 字段 | 状态 |
+|------------|-------------|----------------------|------|
+| `document_analysis_agent.py:110` | `algorithm_analyzer` | `document_analysis` | 不匹配 |
+| `code_generation_agent.py:102` | `code_planner` | 无对应文件 | 缺失 |
+| `code_generation_agent.py:168` | `code_generator` | `code_generation`（name 字段一致但文件内容不同） | 需确认 |
+| `code_verification_agent.py:160` | `result_verification` | `code_verification` | 不匹配 |
+| `error_repair_agent.py:63` | `error_repair` | `error_repair` | 匹配 |
 
-#### 2.5 测试和迁移
-- [ ] 编写 LangGraph 工作流集成测试
-- [ ] 验证工作流功能完整性
-- [ ] 性能测试和优化
+### 2. 架构冗余问题
 
-**依赖**：LangGraph >=0.2.0  
-**时间估算**：2 周
+| 问题 | 详情 |
+|------|------|
+| LLM Client 重复实现 | `src/tools/llm_client.py` 和 `src/llms/llm_client.py` 几乎完全相同，前者未继承 BaseLLM，后者正确继承 |
+| State 字段 `env_config` 未使用 | `PaperState` 定义了 `env_config` 字段，但无任何 Agent 写入或读取 |
+| 设计文档引用不存在的文件 | `docs/design.md` 引用 `pdf_reader.py`、`algorithm_analyzer.py`、`code_planner.py` 等已不存在的文件路径 |
 
----
+### 3. 功能缺失
 
-### 第三阶段：Agent 层重构
-
-**目标**：按照新架构重构 Agent 层，实现 4 个智能体的业务逻辑
-
-#### 3.1 Agent 基类统一
-- [ ] 统一 `BaseAgent` 接口
-- [ ] 添加抽象方法：`get_name()`, `get_description()`
-- [ ] 使用新的 LLM 客户端接口
-
-#### 3.2 文档分析智能体重构
-- [ ] 重命名为 `DocumentAnalysisAgent`
-- [ ] 集成 PDF 解析工具（调用 Tool 层的 `pdf_reader.py`）
-- [ ] 实现算法分析逻辑
-- [ ] 适配新的 LLM 客户端调用
-
-#### 3.3 代码生成智能体重构
-- [ ] 重命名为 `CodeGenerationAgent`
-- [ ] 集成代码规划功能
-- [ ] 实现代码生成逻辑
-- [ ] 适配新的 LLM 客户端调用
-- [ ] 实现依赖分析
-- [ ] 生成配置文件
-
-#### 3.4 代码验证智能体重构
-- [ ] 重命名为 `CodeVerificationAgent`
-- [ ] 集成代码执行工具
-- [ ] 实现代码监控和日志记录
-- [ ] 实现结果对比和评估
-- [ ] 适配新的 LLM 客户端调用
-
-#### 3.5 错误修复智能体重构
-- [ ] 重命名为 `ErrorRepairAgent`
-- [ ] 实现错误分析和定位
-- [ ] 实现代码修复逻辑
-- [ ] 适配新的 LLM 客户端调用
-
-#### 3.6 测试和验证
-- [ ] 添加单元测试
-- [ ] 验证 Agent 间交互
-
-**依赖**：LLM 客户端完成  
-**时间估算**：2 周
+| 缺失功能 | 设计文档中的要求 | 当前状态 |
+|----------|-----------------|---------|
+| 测试用例 | 代码架构文档要求 80% 以上覆盖率 | `test_cases/` 目录为空，仅有 `__init__.py` |
+| 用户界面层 | 论文要求 Streamlit 前端界面 | 无任何前端实现 |
+| Docker 环境支持 | 论文要求生成 Docker 构建脚本 | 无相关实现 |
+| Prompt TXT 遗留格式 | 设计文档提到 TXT 格式向后兼容 | `PromptManager` 不再加载 TXT 文件 |
+| 领域知识库 | 架构图中 Tool 层包含知识库 | 无实现 |
 
 ---
 
-### 第四阶段：Tool 层重构
+## 重构计划
 
-**目标**：完善 Tool 层实现，提供更强大的基础能力
+### 第一阶段：修复阻断性问题（优先级：紧急）
 
-#### 4.1 PDF 解析工具重构
-- [ ] 优化 PDF 解析准确率
-- [ ] 添加章节结构识别
-- [ ] （可选）添加表格解析支持
+> 目标：让系统能够正常运行，不出现运行时崩溃
 
-#### 4.2 代码执行工具重构
-- [ ] 添加资源监控（CPU、内存）
-- [ ] 添加超时控制
-- [ ] 改进错误捕获和报告
+#### 1.1 统一 Prompt 模板名称
 
-#### 4.3 测试和验证
-- [ ] 添加工具层单元测试
-- [ ] 验证工具功能完整性
+**问题**：Agent 代码中引用的模板名与 YAML 文件中定义的 `name` 字段不一致。
 
-**依赖**：Tool 层完成  
-**时间估算**：1 周
+**方案**：修改 YAML 文件的 `name` 字段和 `input_variables` 以匹配 Agent 的调用，同时补齐缺失的模板。
 
----
+**具体操作**：
 
-### 第五阶段：提示词系统重构
+- **`src/prompts/document_analysis.yaml`**：将 `name: document_analysis` 改为 `name: algorithm_analyzer`，匹配 `DocumentAnalysisAgent` 中的调用 `PROMPTS.format_template("algorithm_analyzer", ...)`
+- **新建 `src/prompts/code_planner.yaml`**：创建代码规划专用模板，`name: code_planner`，匹配 `CodeGenerationAgent._plan_code()` 中的调用
+- **`src/prompts/code_generation.yaml`**：确认 `name: code_generator`，匹配 `CodeGenerationAgent._generate_code()` 中的调用 `PROMPTS.format_template("code_generator", ...)`
+- **`src/prompts/code_verification.yaml`**：将 `name: code_verification` 改为 `name: result_verification`，匹配 `CodeVerificationAgent._verify_results()` 中的调用 `PROMPTS.format_template("result_verification", ...)`
 
-**目标**：统一提示词系统，支持动态更新和版本管理
+**涉及文件**：
+- `src/prompts/document_analysis.yaml`
+- `src/prompts/code_generation.yaml`
+- `src/prompts/code_verification.yaml`
+- `src/prompts/code_planner.yaml`（新建）
 
-#### 5.1 PromptManager 重构
-- [ ] 支持提示词热更新
-- [ ] 添加提示词版本管理
-- [ ] 支持多环境配置
+#### 1.2 消除 LLM Client 重复
 
-#### 5.2 YAML 提示词标准化
-- [ ] 定义标准提示词 YAML 格式
-- [ ] 添加验证机制
-- [ ] 支持提示词 A/B 测试
+**问题**：`src/tools/llm_client.py` 和 `src/llms/llm_client.py` 存在重复代码。所有 Agent 从 `src/tools/llm_client.py` 导入 LLMClient，但该文件未继承 BaseLLM 抽象基类，不符合设计规范。`src/llms/llm_client.py` 是正确的实现，继承了 BaseLLM。
 
-#### 5.3 提示词调优框架
-- [ ] 设计提示词 A/B 测试框架
-- [ ] 集成到 CI/CD 流程
+**方案**：删除 `src/tools/llm_client.py`，将所有 Agent 的导入改为从 `src/llms/llm_client.py` 导入。
 
-**依赖**：提示词系统完成  
-**时间估算**：1 周
+**涉及文件**：
+- `src/agents/document_analysis_agent.py` — 将 `from ..tools.llm_client import LLMClient` 改为 `from ..llms.llm_client import LLMClient`
+- `src/agents/code_generation_agent.py` — 同上
+- `src/agents/code_verification_agent.py` — 同上
+- `src/agents/error_repair_agent.py` — 同上
+- `src/tools/llm_client.py` — 删除
 
----
+#### 1.3 清理未使用的 State 字段
 
-### 第六阶段：配置管理重构
+**问题**：`PaperState` 中的 `env_config` 字段无任何 Agent 使用。
 
-**目标**：简化配置管理，仅使用 `.env`，移除 YAML 配置
+**方案**：移除 `env_config` 字段，保持 State 定义精简。如果未来需要环境配置功能，再按需添加。
 
-#### 6.1 移除 YAML 配置支持
-- [ ] 从 `config.py` 移除 YAML 配置加载逻辑
-- [ ] 从设计文档中移除 `config/default.yaml` 引用
-- [ ] 更新 CLAUDE.md，移除 YAML 配置说明
-
-#### 6.2 .env 配置优化
-- [ ] 添加配置验证
-- [ ] 添加配置示例
-- [ ] 添加配置文档
-
-#### 6.3 测试和验证
-- [ ] 验证配置加载正确
-- [ ] 测试 LLM 客户端配置
-
-**依赖**：配置管理完成  
-**时间估算**：1 周
+**涉及文件**：
+- `src/state/__init__.py`
 
 ---
 
-### 第七阶段：测试和文档完善
+### 第二阶段：架构优化（优先级：高）
 
-**目标**：完善测试覆盖率和更新文档
+> 目标：消除代码冗余，提高代码质量和一致性
 
-#### 7.1 测试覆盖率提升
-- [ ] 补充单元测试到 80% 以上覆盖率
-- [ ] 添加集成测试
-- [ ] 添加性能测试
+#### 2.1 统一 Agent 配置传递
 
-#### 7.2 文档同步
-- [ ] 同步 CLAUDE.md 与代码架构设计文档
-- [ ] 同步设计文档与实现
+**问题**：`workflow.py` 中创建 Agent 时未传递全局 config，各 Agent 各自初始化默认配置。
 
-#### 7.3 示例和教程
-- [ ] 添加使用示例
-- [ ] 添加故障排除指南
+**方案**：在 `PaperCoderWorkflow` 中统一管理配置，创建 Agent 时传入配置。
 
-**依赖**：测试和文档完成  
-**时间估算**：1 周
+**具体操作**：
+- `workflow.py` 中的 node 函数从闭包或全局获取 config，传递给 Agent 构造函数
+- 各 Agent 构造函数接受 config 参数并使用其中的 output_dir、conda_env_name 等配置
+
+**涉及文件**：
+- `src/graph/workflow.py`
+- `src/agents/document_analysis_agent.py`
+- `src/agents/code_generation_agent.py`
+- `src/agents/code_verification_agent.py`
+- `src/agents/error_repair_agent.py`
+
+#### 2.2 增强错误处理一致性
+
+**问题**：各 Agent 的错误处理模式不完全一致，有的返回 errors 列表，有的直接抛异常。
+
+**方案**：在 BaseAgent 中提供统一的错误处理辅助方法。
+
+```python
+# 在 BaseAgent 中添加
+def _error_state(self, state: Dict[str, Any], message: str) -> Dict[str, Any]:
+    """Return state with appended error message."""
+    errors = state.get("errors", []) + [f"[{self.name}] {message}"]
+    return {**state, "errors": errors}
+
+def _success_state(self, state: Dict[str, Any], updates: Dict[str, Any], step: str) -> Dict[str, Any]:
+    """Return state with updates and current_step set."""
+    return {**state, **updates, "current_step": step}
+```
+
+**涉及文件**：
+- `src/agents/base.py`
+- 各 Agent 文件（使用统一方法替换各自的错误处理模式）
+
+#### 2.3 移除 Agent 中硬编码的 system_prompt
+
+**问题**：各 Agent 内部硬编码了 system_prompt 字符串，未利用 Prompt 系统管理。
+
+**方案**：将硬编码的 system_prompt 移入 YAML 模板的元数据中，或添加为 YAML 的 `system_prompt` 字段，Agent 从模板获取。
+
+**涉及文件**：
+- `src/prompts/*.yaml`（添加 `system_prompt` 字段）
+- `src/prompts/__init__.py`（PromptTemplate 支持 system_prompt）
+- 各 Agent 文件（移除硬编码的 system_prompt）
+
+#### 2.4 更新设计文档中的文件引用
+
+**问题**：`docs/design.md` 中引用了不存在的文件路径。
+
+**方案**：更新 `docs/design.md` 中的 Agent 实现文件路径，使其与当前代码一致。
+
+**需要更新的引用**：
+| 设计文档中的路径 | 实际路径 |
+|-----------------|---------|
+| `src/agents/pdf_reader.py` | 不存在（功能合并入 `document_analysis_agent.py`） |
+| `src/agents/algorithm_analyzer.py` | 不存在（功能合并入 `document_analysis_agent.py`） |
+| `src/agents/code_planner.py` | 不存在（功能合并入 `code_generation_agent.py`） |
+| `src/agents/code_generator.py` | 不存在（功能合并入 `code_generation_agent.py`） |
+| `src/agents/code_validator.py` | 不存在（功能合并入 `code_verification_agent.py`） |
+| `src/agents/result_verification_agent.py` | 不存在（功能合并入 `code_verification_agent.py`） |
+| `src/tools/pdf_reader.py` | 实际为 `src/tools/pdf_parser.py` |
+| `src/agents/super_agent.py` | 不存在（功能由 `src/graph/workflow.py` 的 PaperCoderWorkflow 承担） |
+
+**涉及文件**：
+- `docs/design.md`
 
 ---
 
-### 第八阶段：部署和监控（可选）
+### 第三阶段：补齐测试（优先级：高）
 
-**目标**：添加部署支持和监控能力
+> 目标：建立测试基础设施，覆盖核心逻辑
 
-#### 8.1 部署配置
-- [ ] 添加 Docker 支持
-- [ ] 添加部署脚本
+#### 3.1 单元测试
 
-#### 8.2 监控和日志
-- [ ] 添加性能监控面板
-- [ ] 添加日志聚合
+**测试范围和优先级**：
 
-**依赖**：基础部署完成  
-**时间估算**：1 周
+| 优先级 | 测试对象 | 测试内容 |
+|--------|---------|---------|
+| P0 | `src/config.py` | 配置加载、验证、默认值 |
+| P0 | `src/state/__init__.py` | PaperState 结构完整性 |
+| P0 | `src/prompts/__init__.py` | 模板加载、格式化、缺失变量检测 |
+| P1 | `src/llms/llm_client.py` | JSON 解析（直接、代码块、尾随逗号）、get_llm 工厂函数 |
+| P1 | `src/tools/pdf_parser.py` | PDF 解析（使用 mock 或测试 PDF） |
+| P1 | `src/tools/code_executor.py` | 代码执行、超时、错误捕获 |
+| P2 | `src/agents/base.py` | BaseAgent 抽象行为 |
+| P2 | 各 Agent | 使用 mock LLM 测试 Agent 的状态流转 |
+
+**测试目录结构**：
+
+```
+test_cases/
+├── __init__.py
+├── unit/
+│   ├── __init__.py
+│   ├── test_config.py
+│   ├── test_state.py
+│   ├── test_prompt_manager.py
+│   ├── test_llm_client.py
+│   ├── test_pdf_parser.py
+│   └── test_code_executor.py
+└── integration/
+    ├── __init__.py
+    └── test_workflow.py
+```
+
+#### 3.2 集成测试
+
+- 端到端工作流测试（使用 mock LLM）
+- 条件路由测试（should_continue_verification 逻辑分支覆盖）
+- 迭代修复循环测试
 
 ---
 
-## 执行优先级
+### 第四阶段：功能完善（优先级：中）
 
-按照重构的依赖关系，确定执行优先级：
+> 目标：补齐设计文档中规划但尚未实现的功能
 
-1. **P0 - 核心框架**：LLM 客户端流式输出（阻塞）
-2. **P0 - LangGraph 迁移**：完全迁移到 LangGraph（阻塞）
-3. **P1 - Agent 重构**：按照新架构重构 Agent 层
-4. **P1 - Tool 层重构**：完善 Tool 层实现
-5. **P2 - 提示词系统**：重构提示词管理
-6. **P2 - 配置简化**：移除 YAML 配置
+#### 4.1 代码生成输出路径改进
 
-## 风险评估
+**问题**：当前 `CodeGenerationAgent` 使用固定的 `output_dir`，多次运行会覆盖之前的结果。
 
-- **低风险**：重构分阶段进行，每阶段可独立验证
-- **回滚策略**：保留原有代码，新代码采用分支开发
-- **测试保障**：每阶段都有完整的测试覆盖
+**方案**：参考 `src/config.py` 中已有的时间戳 + PDF 文件名的目录生成逻辑，在 Agent 中使用。
 
-## 成功标准
+**涉及文件**：
+- `src/agents/code_generation_agent.py`
+- `src/graph/workflow.py`
 
-每个阶段的成功标准：
-1. LLM 客户端流式输出：实现完整的流式输出协议，通过单元测试验证
-2. LangGraph 迁移：工作流使用 LangGraph 重写，功能测试通过
-3. Agent 重构：各 Agent 按新架构实现，单元测试覆盖 >= 80%
-4. Tool 层重构：工具功能正常，单元测试覆盖 >= 80%
-5. 提示词系统：提示词热更新功能正常，单元测试覆盖 >= 80%
-6. 配置简化：移除 YAML 配置支持，仅使用 .env
+#### 4.2 添加日志系统
 
-## 总结
+**问题**：当前使用 `print()` 输出状态信息，缺乏结构化日志。
 
-本重构计划按照依赖关系分为 8 个阶段，从最基础的 LLM 客户端流式输出开始，逐步扩展到部署和监控。每个阶段都有明确的成功标准和时间估算，确保重构过程可控、可回滚。拥抱 LangChain 和 LangGraph 生态，充分利用其成熟的功能和最佳实践。
+**方案**：引入 Python 标准 `logging` 模块，配合 `rich` 库进行格式化输出，替换所有 `print()` 调用。
+
+**涉及文件**：
+- 新建 `src/utils/logger.py`（日志配置模块）
+- `src/graph/workflow.py`
+- 各 Agent 文件
+
+#### 4.3 Prompt 模板补充
+
+**问题**：当前缺少 `code_planner.yaml`、`env_config.yaml` 等设计文档中提到的模板。
+
+**方案**：
+- 新建 `src/prompts/code_planner.yaml`（代码规划提示词）
+- 新建 `src/prompts/env_config.yaml`（环境配置提示词）
+- 评估是否需要 `algorithm_analyzer.yaml`（与 document_analysis 合并或独立）
+
+**涉及文件**：
+- `src/prompts/code_planner.yaml`（新建）
+- `src/prompts/env_config.yaml`（新建）
+
+---
+
+### 第五阶段：文档和代码一致性（优先级：中低）
+
+> 目标：确保文档准确反映代码实现
+
+#### 5.1 更新 CLAUDE.md
+
+**问题**：CLAUDE.md 中列出的 Prompt 模板文件名与实际不一致。
+
+**需要更新**：
+- CLAUDE.md 中 "Prompt Templates" 部分列出的模板文件名
+- 更新架构图中的 "LangGraph 工作流" 描述（当前未体现"超级智能体"概念）
+
+#### 5.2 更新 docs/code-architecture.md
+
+**问题**：开发计划中的复选框状态需要更新，反映已完成的和未完成的工作。
+
+**需要更新**：
+- 标记已完成的开发任务
+- 更新技术债务列表
+- 更新目录结构图
+
+#### 5.3 更新 docs/design.md
+
+**问题**：如 2.4 节所述，文件路径引用过时。
+
+---
+
+## 重构优先级总览
+
+```
+第一阶段（紧急）          第二阶段（高）           第三阶段（高）
+┌───────────────────┐   ┌───────────────────┐   ┌───────────────────┐
+│ 1.1 统一模板名称   │   │ 2.1 统一配置传递   │   │ 3.1 单元测试       │
+│ 1.2 消除LLM重复    │   │ 2.2 统一错误处理   │   │ 3.2 集成测试       │
+│ 1.3 清理State字段  │   │ 2.3 移除硬编码提示 │   │                   │
+└───────────────────┘   │ 2.4 更新文档引用   │   └───────────────────┘
+                        └───────────────────┘
+第四阶段（中）            第五阶段（中低）
+┌───────────────────┐   ┌───────────────────┐
+│ 4.1 输出路径改进   │   │ 5.1 更新CLAUDE.md  │
+│ 4.2 日志系统      │   │ 5.2 更新架构文档   │
+│ 4.3 补齐Prompt模板│   │ 5.3 更新设计文档   │
+└───────────────────┘   └───────────────────┘
+```
+
+## 实施建议
+
+1. **每阶段独立提交**：每个阶段完成后创建独立 commit，便于回滚和追踪
+2. **第一阶段完成后立即验证**：修复阻断性问题后，使用一个测试 PDF 验证端到端流程
+3. **第二阶段与第三阶段可并行**：架构优化和测试编写可以同时进行
+4. **第四、五阶段按需推进**：根据实际使用情况决定优先级
+
+## 不在本次重构范围内的事项
+
+以下功能在设计文档中提及，但涉及较大工作量，建议作为独立项目推进：
+
+- Streamlit 用户界面（论文中描述的用户界面层）
+- Docker 容器化支持（论文中描述的隔离执行环境）
+- 领域知识库（架构图中的 Tool 层组件）
+- 多 LLM 负载均衡
+- 分布式追踪（OpenTelemetry）
+- 提示词 A/B 测试框架
