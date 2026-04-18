@@ -368,7 +368,7 @@ ZHIPU_MODEL=glm-4.7
 ZHIPU_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 
 # 通用 LLM 配置
-LLM_MAX_TOKENS=4096
+LLM_MAX_TOKENS=128000
 LLM_TEMPERATURE=0.7
 
 # 执行配置
