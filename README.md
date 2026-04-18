@@ -107,29 +107,34 @@ MultiAgentPaperCoder/
 │   └── code-architecture.md # 系统架构设计
 ├── src/                    # 源代码
 │   ├── agents/             # Agent实现（4个核心Agent）
-│   │   ├── base.py              # Agent基类
-│   │   ├── document_analysis.py # 文档分析智能体
-│   │   ├── code_generation.py   # 代码生成智能体
-│   │   ├── code_verification.py # 代码验证智能体
-│   │   └── error_repair_agent.py # 错误修复智能体
+│   │   ├── base.py                 # Agent基类
+│   │   ├── document_analysis_agent.py # 文档分析智能体
+│   │   ├── code_generation_agent.py   # 代码生成智能体
+│   │   ├── code_verification_agent.py # 代码验证智能体
+│   │   ├── error_repair_agent.py   # 错误修复智能体
+│   │   └── __init__.py             # Agent模块初始化
 │   ├── graph/              # 工作流编排
-│   │   └── workflow.py          # LangGraph工作流
+│   │   ├── workflow.py           # LangGraph工作流
+│   │   └── __init__.py           # 图模块初始化
 │   ├── llms/               # LLM抽象层
-│   │   ├── base.py              # LLM基类
-│   │   └── llm_client.py        # LLM客户端实现
+│   │   ├── base.py               # LLM基类
+│   │   ├── llm_client.py         # LLM客户端实现
+│   │   └── __init__.py           # LLM模块初始化
 │   ├── tools/              # 工具集
-│   │   ├── llm_client.py        # LLM客户端（向后兼容）
-│   │   ├── pdf_parser.py        # PDF解析器
-│   │   └── code_executor.py    # 代码执行器
+│   │   ├── llm_client.py         # LLM客户端（向后兼容）
+│   │   ├── pdf_parser.py         # PDF解析器
+│   │   ├── code_executor.py     # 代码执行器
+│   │   └── __init__.py           # 工具模块初始化
 │   ├── state/              # 状态管理
-│   │   └── __init__.py          # PaperState定义
-│   └── prompts/            # 提示词模板（YAML格式）
-│       ├── algorithm_analyzer.yaml
-│       ├── code_planner.yaml
-│       ├── code_generator.yaml
-│       ├── env_config.yaml
-│       ├── result_verification.yaml
-│       └── error_repair.yaml
+│   │   └── __init__.py           # PaperState定义和状态模块初始化
+│   ├── prompts/            # 提示词模板（YAML格式）
+│   │   ├── __init__.py           # 提示词管理器
+│   │   ├── document_analysis.yaml # 文档分析提示词
+│   │   ├── code_generation.yaml   # 代码生成提示词
+│   │   ├── code_verification.yaml # 代码验证提示词
+│   │   └── error_repair.yaml     # 错误修复提示词
+│   ├── config.py            # 配置管理
+│   └── main.py              # 主入口
 ├── test_cases/            # 测试用例
 ├── output/                # 输出目录
 │   └── generated_code/   # 生成的代码
