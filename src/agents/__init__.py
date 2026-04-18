@@ -8,9 +8,9 @@ This module exports the 4 core agents as defined in the architecture:
 """
 
 from .base import BaseAgent
-from .document_analysis import DocumentAnalysisAgent
-from .code_generation import CodeGenerationAgent
-from .code_verification import CodeVerificationAgent
+from .document_analysis_agent import DocumentAnalysisAgent
+from .code_generation_agent import CodeGenerationAgent
+from .code_verification_agent import CodeVerificationAgent
 from .error_repair_agent import ErrorRepairAgent
 
 __all__ = [

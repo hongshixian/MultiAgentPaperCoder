@@ -129,8 +129,8 @@ def code_verification_node(state: PaperState, config: Dict[str, Any] = None) -> 
 
     agent = CodeVerificationAgent(agent_config)
     result = agent(state)
-    validation_status = result.get("validation_result", {}).get("status", "unknown")
-    verification = result.get("verification_result", {})
+    validation_status = (result.get("validation_result") or {}).get("status", "unknown")
+    verification = result.get("verification_result") or {}
     quality_score = verification.get("quality_score", "N/A")
     print(f"✓ Code verification completed (status: {validation_status}, quality: {quality_score})")
     if verification.get("needs_repair"):
@@ -169,7 +169,7 @@ def should_continue_verification(state: PaperState) -> str:
     Returns:
         Next step name: "error_repair", "code_regeneration", or "end"
     """
-    verification = state.get("verification_result", {})
+    verification = state.get("verification_result") or {}
     iteration_count = state.get("iteration_count", 0)
     max_iterations = state.get("max_iterations", 5)
 

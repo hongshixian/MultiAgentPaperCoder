@@ -33,22 +33,10 @@ def main():
 
     args = parser.parse_args()
 
-    # Load configuration: Load config from file
-    from src.config import AppConfig, load_config_from_file
+    # Load configuration from .env
+    from src.config import AppConfig
 
-    config_path = Path(args.config) if args.config else Path("config/default.yaml")
-
-    try:
-        if config_path.exists():
-            print(f"Loading configuration from {config_path}...")
-            config = AppConfig.from_yaml(config_path)
-        else:
-            print(f"Config file not found: {config_path}")
-            print("Using default configuration...")
-            config = AppConfig()
-    except Exception as e:
-        print(f"Error loading configuration: {e}")
-        sys.exit(1)
+    config = AppConfig()
 
     # Override with CLI arguments
     config.verbose = args.verbose
@@ -78,7 +66,7 @@ def main():
     print(f"✓ Output directory: {output_dir}")
     print(f"  LLM Provider: {config.llm_provider}")
     print(f"  LLM Model: {config.get_model()}")
-    print(f"  Conda Environment: {config.conda_env_name}")
+    print(f"  Conda Environment: {config.conda_env}")
 
     # Initialize and run workflow
     print("\n" + "=" * 60)
@@ -91,7 +79,7 @@ def main():
         # Convert config to dict for workflow
         workflow_config = {
             "output_dir": str(config.current_output_dir),
-            "conda_env_name": config.conda_env_name,
+            "conda_env_name": config.conda_env,
             "verbose": config.verbose,
             "skip_validation": config.skip_validation,
             "max_retries": config.max_retries,
