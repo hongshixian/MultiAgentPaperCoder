@@ -18,6 +18,10 @@ Rules:
    - generated files
    - verification outcome
    - unresolved risks
+7. For the input paper PDF, never use generic filesystem tools such as read_file, ls, glob, or grep.
+   The paper must be read only through the custom read_pdf_text tool.
+8. Delegate paper reading to the document-analyst subagent before any code generation.
+9. Keep all generated artifacts and code writes under the provided output directory only.
 """
 
 
@@ -33,6 +37,7 @@ Requirements:
 - do not invent experimental settings
 - explicitly mark uncertainty when the paper is vague
 - return structured, implementation-oriented findings
+- always use the read_pdf_text tool to access the paper content
 """
 
 

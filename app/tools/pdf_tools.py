@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+
+logger = logging.getLogger("papercoder.tools.pdf")
 
 
 def read_pdf_text(pdf_path: str) -> str:
@@ -16,8 +19,10 @@ def read_pdf_text(pdf_path: str) -> str:
 
     path = Path(pdf_path)
     if not path.exists():
+        logger.error("PDF path does not exist: %s", pdf_path)
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
+    logger.info("Reading PDF text from %s", path)
     reader = PdfReader(str(path))
     chunks: list[str] = []
     for page in reader.pages:
@@ -28,6 +33,8 @@ def read_pdf_text(pdf_path: str) -> str:
 
     full_text = "\n\n".join(chunks)
     if not full_text:
+        logger.error("PDF text extraction returned empty content for %s", path)
         raise ValueError("PDF text extraction returned empty content")
 
+    logger.info("Extracted %d characters from PDF %s", len(full_text), path)
     return full_text[:50000]

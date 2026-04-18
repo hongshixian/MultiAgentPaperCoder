@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import sys
-import types
-from pathlib import Path
 
 import pytest
 
@@ -25,6 +23,11 @@ class TestSettings:
         assert settings.output_root.exists()
         assert settings.artifacts_dir.exists()
         assert settings.generated_code_dir.exists()
+        assert settings.log_dir.exists()
+
+    def test_resolved_model_name_strips_provider_prefix(self, tmp_path):
+        settings = Settings(model_name="openai:gpt-5.4", output_root=tmp_path / "output")
+        assert settings.resolved_model_name == "gpt-5.4"
 
 
 class TestArtifactTools:
@@ -94,21 +97,32 @@ class TestAppAgent:
         with pytest.raises(ImportError, match="deepagents is not installed"):
             build_agent(Settings(output_root=tmp_path / "output"))
 
-    def test_build_agent_uses_create_deep_agent(self, tmp_path, monkeypatch):
+    def test_build_agent_constructs_main_agent(self, tmp_path, monkeypatch):
         captured = {}
 
-        def fake_create_deep_agent(**kwargs):
+        def fake_create_agent(**kwargs):
             captured.update(kwargs)
             return {"ok": True, "kwargs": kwargs}
 
-        fake_module = types.SimpleNamespace(create_deep_agent=fake_create_deep_agent)
-        monkeypatch.setitem(sys.modules, "deepagents", fake_module)
+        monkeypatch.setattr("app.agent.create_agent", fake_create_agent)
+        monkeypatch.setattr(
+            "app.agent.build_subagents",
+            lambda settings: [
+                {
+                    "name": "document-analyst",
+                    "description": "doc agent",
+                    "runnable": object(),
+                }
+            ],
+        )
 
         result = build_agent(Settings(output_root=tmp_path / "output"))
 
         assert result["ok"] is True
         assert captured["name"] == "papercoder-main"
-        assert captured["subagents"]
+        assert captured["middleware"]
+        assert captured["checkpointer"] is not None
+        assert captured["debug"] is True
 
 
 class TestMainPrompt:
@@ -118,3 +132,4 @@ class TestMainPrompt:
         prompt = build_user_prompt("/tmp/paper.pdf", "./output")
         assert "/tmp/paper.pdf" in prompt
         assert "./output/generated_code/" in prompt
+        assert "read_pdf_text" in prompt

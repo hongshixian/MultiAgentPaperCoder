@@ -24,6 +24,7 @@ class Settings:
             os.getenv("OUTPUT_DIR"),
         )
     )
+    log_dir_override: str = field(default_factory=lambda: os.getenv("LOG_DIR", "").strip())
 
     @property
     def artifacts_dir(self) -> Path:
@@ -33,10 +34,17 @@ class Settings:
     def generated_code_dir(self) -> Path:
         return self.output_root / "generated_code"
 
+    @property
+    def log_dir(self) -> Path:
+        if self.log_dir_override:
+            return Path(self.log_dir_override)
+        return self.output_root / "logs"
+
     def ensure_dirs(self) -> None:
         self.output_root.mkdir(parents=True, exist_ok=True)
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         self.generated_code_dir.mkdir(parents=True, exist_ok=True)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
 
     @property
     def resolved_model_name(self) -> str:
