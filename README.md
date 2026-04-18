@@ -1,13 +1,12 @@
 # MultiAgentPaperCoder
 
-一个基于多智能体的自动化论文代码复现工具。
+一个基于多智能体的自动化论文代码复现工具，基于 LangChain 和 LangGraph 生态构建。
 
 ## 功能特性
 
-- 📄 自动读取和解析PDF格式论文
+- 📄 自动读取和解析 PDF 格式论文
 - 🧠 理解论文中算法的主要实现逻辑
-- 📋 规划如何复现论文代码
-- 💻 根据规划生成可运行的Python代码
+- 💻 根据规划生成可运行的 Python 代码
 - ✅ 验证代码是否可正常运行（训练）
 - 🔍 提供错误分析和修复建议
 
@@ -15,34 +14,33 @@
 
 ```
 MultiAgentPaperCoder
-└── PaperCoderSuperAgent (主控智能体)
-    ├── PDFReaderAgent      # 论文读取器
-    ├── AlgorithmAnalyzerAgent  # 算法分析器
-    ├── CodePlannerAgent     # 代码规划器
-    ├── CodeGeneratorAgent   # 代码生成器
-    └── CodeValidatorAgent   # 代码验证器
+└── LangGraph Workflow (工作流编排)
+    ├── DocumentAnalysisAgent  # 文档分析智能体（合并PDF读取+算法分析）
+    ├── CodeGenerationAgent   # 代码生成智能体（合并代码规划+代码生成）
+    ├── CodeVerificationAgent # 代码验证智能体（合并代码验证+结果验证）
+    └── ErrorRepairAgent     # 错误修复智能体
 ```
 
 ### Agent 详细说明
 
 | Agent | 功能 | 核心工具 |
 |-------|------|----------|
-| PaperCoderSuperAgent | 协调工作流和状态管理 | LangGraph工作流 |
-| PDFReaderAgent | 读取PDF并提取结构化内容 | PyPDF2/pdfplumber |
-| AlgorithmAnalyzerAgent | 分析算法并提取关键信息 | Claude API / ZhipuAI API |
-| CodePlannerAgent | 设计代码结构和实现计划 | Claude API / ZhipuAI API |
-| CodeGeneratorAgent | 生成完整Python代码 | Claude API / ZhipuAI API |
-| CodeValidatorAgent | 运行并验证代码 | Conda + subprocess |
+| DocumentAnalysisAgent | 读取PDF并分析算法 | PDFParser + LLM |
+| CodeGenerationAgent | 设计代码结构并生成完整代码 | LLM |
+| CodeVerificationAgent | 验证代码执行并评估结果 | CodeExecutor + LLM |
+| ErrorRepairAgent | 分析错误并生成修复建议 | LLM |
 
 ## 技术栈
 
 - **Python**: 3.12+
-- **LLM编排**: LangGraph (自实现的简单工作流，未来可升级到LangGraph)
+- **LLM编排**: LangGraph (用于状态管理和条件路由)
+- **LLM接口**: LangChain (统一LLM调用)
 - **大语言模型**: 
-  - Claude API (默认)
-  - ZhipuAI API (支持)
+  - Claude API (支持)
+  - 智谱AI GLM API (支持)
 - **PDF解析**: PyPDF2 + pdfplumber
 - **代码执行**: subprocess + conda环境隔离
+- **资源监控**: psutil (可选）
 
 ## 快速开始
 
@@ -74,7 +72,7 @@ ANTHROPIC_API_KEY=your_api_key_here
 CLAUDE_MODEL=claude-3-5-sonnet-20241022
 ```
 
-#### 使用 ZhipuAI API
+#### 使用 智谱AI API
 
 编辑 `.env` 文件：
 ```
@@ -96,9 +94,6 @@ python -m src.main --pdf paper.pdf --output-dir ./my_output
 # 指定conda环境
 python -m src.main --pdf paper.pdf --conda-env py12pt
 
-# 跳过验证步骤
-python -m src.main --pdf paper.pdf --skip-validation
-
 # 启用详细输出
 python -m src.main --pdf paper.pdf --verbose
 ```
@@ -109,30 +104,33 @@ python -m src.main --pdf paper.pdf --verbose
 MultiAgentPaperCoder/
 ├── docs/                   # 设计文档
 │   ├── design.md           # 详细设计说明
-│   └── architecture.md     # 系统架构设计
+│   └── code-architecture.md # 系统架构设计
 ├── src/                    # 源代码
-│   ├── agents/             # Agent实现
+│   ├── agents/             # Agent实现（4个核心Agent）
 │   │   ├── base.py              # Agent基类
-│   │   ├── super_agent.py       # 主控智能体
-│   │   ├── pdf_reader.py        # PDF读取器
-│   │   ├── algorithm_analyzer.py # 算法分析器
-│   │   ├── code_planner.py      # 代码规划器
-│   │   ├── code_generator.py    # 代码生成器
-│   │   └── code_validator.py    # 代码验证器
+│   │   ├── document_analysis.py # 文档分析智能体
+│   │   ├── code_generation.py   # 代码生成智能体
+│   │   ├── code_verification.py # 代码验证智能体
+│   │   └── error_repair_agent.py # 错误修复智能体
 │   ├── graph/              # 工作流编排
-│   │   └── workflow.py          # 主工作流
+│   │   └── workflow.py          # LangGraph工作流
+│   ├── llms/               # LLM抽象层
+│   │   ├── base.py              # LLM基类
+│   │   └── llm_client.py        # LLM客户端实现
 │   ├── tools/              # 工具集
-│   │   ├── llm_client.py        # LLM客户端（支持Claude和ZhipuAI）
+│   │   ├── llm_client.py        # LLM客户端（向后兼容）
 │   │   ├── pdf_parser.py        # PDF解析器
 │   │   └── code_executor.py    # 代码执行器
-│   └── state/              # 状态管理
-│       └── __init__.py          # 状态定义
-├── prompts/               # 提示词模板
-│   ├── analyzer.txt       # 算法分析提示词
-│   ├── planner.txt        # 代码规划提示词
-│   └── generator.txt      # 代码生成提示词
-├── examples/              # 示例代码
-│   └── test_simple.py    # 基础测试脚本
+│   ├── state/              # 状态管理
+│   │   └── __init__.py          # PaperState定义
+│   └── prompts/            # 提示词模板（YAML格式）
+│       ├── algorithm_analyzer.yaml
+│       ├── code_planner.yaml
+│       ├── code_generator.yaml
+│       ├── env_config.yaml
+│       ├── result_verification.yaml
+│       └── error_repair.yaml
+├── test_cases/            # 测试用例
 ├── output/                # 输出目录
 │   └── generated_code/   # 生成的代码
 ├── requirements.txt       # Python依赖
@@ -167,6 +165,7 @@ output/generated_code/
 - 生成的文件列表
 - 验证结果（成功/失败）
 - 错误日志（如有）
+）
 - 修复建议（如有）
 
 ## 开发指南
@@ -174,26 +173,30 @@ output/generated_code/
 ### 运行测试
 
 ```bash
-# 基础功能测试
-python examples/test_simple.py
+# 运行所有测试
+pytest test_cases/
 
-# 智谱AI集成测试
-python test_zhipu.py
+# 运行特定测试类别
+pytest test_cases/unit/
+pytest test_cases/integration/
 
-# 完整工作流测试
-python test_with_pdf.py --pdf paper_examples/your_paper.pdf
+# 运行特定测试文件
+pytest test_cases/unit/test_basic_imports.py
+
+# 运行测试并显示输出
+pytest test_cases/ -v
 ```
 
 ### 添加新的Agent
 
 1. 继承 `BaseAgent` 类
 2. 实现 `__call__` 方法
-3. 在 `workflow.py` 中注册
+3. 在 `workflow.py` 中注册为节点
 
 ```python
 from src.agents.base import BaseAgent
 
-class MyCustomAgent
+class MyCustomAgent(BaseAgent):
     def __init__(self, config=None):
         super().__init__("MyCustomAgent", config)
 
@@ -204,35 +207,52 @@ class MyCustomAgent
 
 ### 自定义提示词
 
-在 `prompts/` 目录下修改对应的 `.txt` 文件：
+在 `src/prompts/` 目录下创建对应的 `.yaml` 文件：
 
-- `analyzer.txt`: 控制算法分析的行为
-- `planner.txt`: 控制代码规划的策略
-- `generator.txt`: 控制代码生成的风格
+```yaml
+name: my_prompt
+input_variables:
+  - var1
+  - var2
+output_format:
+  field: type
+template: |
+  Your prompt here with {var1} and {var2}
+```
 
 ## 技术决策
 
-### 为什么选择LangGraph而不是DeepAgents？
+### 为什么选择LangGraph？
 
 LangGraph具有以下优势：
 - 更成熟的生态系统
-- 完 完的文档和示例
+- 完整的文档和示例
 - 更好的社区支持
-- 更灵活的状态管理
+- 灵活的状态管理和条件路由
 
-### 为什么支持ZhipuAI？
+### 为什么支持智谱AI？
 
 - 为国内用户提供更好的访问体验
 - 降低API调用成本
 - 与OpenAI SDK兼容，易于集成
+- 支持中文场景优化
+
+### 架构分层
+
+系统采用清晰的分层架构：
+- **Agent层**: 负责高层次决策和协调
+- **Tool/LLM层**: 提供具体的基础能力
+
+这种设计使得职责划分清晰，易于维护和扩展。
 
 ## 注意事项
 
-1. **API Key安全**: 请妥善保管你的 API Key，不要提交到版本控制
+1. **API Key安全**: 请妥善保管你的API Key，不要提交到版本控制
 2. **成本控制**: 每次处理论文都会调用LLM API，注意监控使用量和成本
 3. **Conda环境**: 确保指定的conda环境存在并且Python版本为3.12+
 4. **代码安全**: 生成的代码在隔离环境中运行，但建议审查生成的代码
 5. **PDF格式**: 目前支持标准PDF格式，扫描版PDF可能需要额外处理
+6. **配置简化**: 仅支持 `.env` 文件配置，不支持YAML配置
 
 ## 未来计划
 
@@ -243,11 +263,12 @@ LangGraph具有以下优势：
 - [ ] 支持论文数据库集成
 - [ ] 添加代码质量检查（静态分析、测试覆盖率）
 - [ ] 优化大论文的Token使用量
+- [ ] 添加流式输出支持
 
 ## 文档
 
 - [设计文档](docs/design.md) - 详细的设计说明
-- [架构文档](docs/architecture.md) - 系统架构设计
+- [架构文档](docs/code-architecture.md) - 系统架构设计
 
 ## 许可证
 

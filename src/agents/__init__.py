@@ -1,25 +1,22 @@
-"""Agents for MultiAgentPaperCoder."""
+"""Agents for MultiAgentPaperCoder.
+
+This module exports the 4 core agents as defined in the architecture:
+- DocumentAnalysisAgent: Reads and analyzes research papers
+- CodeGenerationAgent: Plans and generates implementation code
+- CodeVerificationAgent: Validates and verifies generated code
+- ErrorRepairAgent: Analyzes and repairs code errors
+"""
 
 from .base import BaseAgent
-from .super_agent import PaperCoderSuperAgent
-from .pdf_reader import PDFReaderAgent
-from .algorithm_analyzer import AlgorithmAnalyzerAgent
-from .code_planner import CodePlannerAgent
-from .code_generator import CodeGeneratorAgent
-from .env_config_agent import EnvConfigAgent
-from .code_validator import CodeValidatorAgent
-from .result_verification_agent import ResultVerificationAgent
+from .document_analysis import DocumentAnalysisAgent
+from .code_generation import CodeGenerationAgent
+from .code_verification import CodeVerificationAgent
 from .error_repair_agent import ErrorRepairAgent
 
 __all__ = [
     "BaseAgent",
-    "PaperCoderSuperAgent",
-    "PDFReaderAgent",
-    "AlgorithmAnalyzerAgent",
-    "CodePlannerAgent",
-    "CodeGeneratorAgent",
-    "EnvConfigAgent",
-    "CodeValidatorAgent",
-    "ResultVerificationAgent",
+    "DocumentAnalysisAgent",
+    "CodeGenerationAgent",
+    "CodeVerificationAgent",
     "ErrorRepairAgent",
 ]
