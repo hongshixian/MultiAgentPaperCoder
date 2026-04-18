@@ -1,7 +1,7 @@
-"""LLM Client using LangChain for unified API access.
+"""LLM Client implementing BaseLLM interface.
 
-This module provides LLMClient that implements BaseLLM interface
-and delegates to LangChain Chat models internally.
+This module provides LLMClient that fully implements the BaseLLM
+interface with proper streaming support.
 """
 
 import os
@@ -9,9 +9,7 @@ import json
 import re
 from typing import Optional, Dict, Any, Generator, AsyncIterator
 
-from dotenv import load_dotenv
-
-load_dotenv()
+from .base import BaseLLM, StreamingOutput
 
 
 def get_llm(provider: str = None, **kwargs):
@@ -52,20 +50,20 @@ def get_llm(provider: str = None, **kwargs):
         )
 
 
-class LLMClient:
-    """Client for interacting with LLM APIs via LangChain.
+class LLMClient(BaseLLM):
+    """LLM client implementing BaseLLM interface.
 
-    Maintains backward compatibility with original interface while
-    internally using LangChain Chat models.
+    This class provides a complete implementation of the BaseLLM
+    interface with proper streaming support and structured output.
     """
 
-    def __init__(self, config=None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize LLM client.
 
         Args:
             config: Optional configuration dictionary
         """
-        self.config = config or {}
+        super().__init__(config)
         self.llm = get_llm(**self.config)
 
     def _build_messages(
@@ -129,7 +127,7 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         **kwargs
-    ) -> Generator[Dict[str, Any], None, None]:
+    ) -> Generator[StreamingOutput, None, None]:
         """Generate response with streaming.
 
         Args:
@@ -140,13 +138,8 @@ class LLMClient:
             **kwargs: Additional LLM-specific parameters
 
         Yields:
-            Dictionaries with streaming output information:
-            - delta: incremental text chunk
-            - content: accumulated text so far
-            - done: whether streaming is complete
+            StreamingOutput objects with incremental updates
         """
-        from ..llms.base import StreamingOutput
-
         messages = self._build_messages(prompt, system_prompt)
 
         llm_kwargs = {}
@@ -160,18 +153,52 @@ class LLMClient:
         for chunk in self.llm.stream(messages, **llm_kwargs):
             if chunk.content:
                 output.add_chunk(chunk.content)
-                yield {
-                    "delta": chunk.content,
-                    "content": output.text,
-                    "done": False,
-                }
+                yield output
 
-        # Final yield to indicate completion
-        yield {
-            "delta": "",
-            "content": output.text,
-            "done": True,
-        }
+        # Final yield to ensure last content is included
+        if output.text:
+            output.finish_reason = "stop"
+            yield output
+
+    async def astream_generate(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        **kwargs
+    ) -> AsyncIterator[StreamingOutput]:
+        """Generate a streaming response asynchronously.
+
+        Args:
+            prompt: User prompt
+            system_prompt: Optional system prompt
+            max_tokens: Override max_tokens
+            temperature: Override temperature
+            **kwargs: Additional LLM-specific parameters
+
+        Yields:
+            StreamingOutput objects with incremental updates
+        """
+        messages = self._build_messages(prompt, system_prompt)
+
+        llm_kwargs = {}
+        if max_tokens is not None:
+            llm_kwargs["max_tokens"] = max_tokens
+        if temperature is not None:
+            llm_kwargs["temperature"] = temperature
+        llm_kwargs.update(kwargs)
+
+        output = StreamingOutput()
+        async for chunk in self.llm.astream(messages, **llm_kwargs):
+            if chunk.content:
+                output.add_chunk(chunk.content)
+                yield output
+
+        # Final yield
+        if output.text:
+            output.finish_reason = "stop"
+            yield output
 
     def generate_structured(
         self,
@@ -180,16 +207,16 @@ class LLMClient:
         system_prompt: Optional[str] = None,
         **kwargs
     ) -> Dict[str, Any]:
-        """Generate structured JSON response from LLM.
+        """Generate structured JSON response.
 
         Args:
             prompt: User prompt
-            output_format: Expected output format (for type hints in prompt)
+            output_format: Expected output format schema
             system_prompt: Optional system prompt
             **kwargs: Additional LLM-specific parameters
 
         Returns:
-            Parsed structured response as dict
+            Parsed JSON response as dictionary
         """
         full_prompt = f"""{prompt}
 
@@ -201,7 +228,7 @@ Return your answer as valid JSON that can be parsed with json.loads().
         response = self.generate(full_prompt, system_prompt, **kwargs)
         return self._parse_json(response)
 
-    # -- JSON parsing utilities (preserved from original) --
+    # -- JSON parsing utilities --
 
     @staticmethod
     def _parse_json(response: str) -> Dict[str, Any]:

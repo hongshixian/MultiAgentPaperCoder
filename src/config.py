@@ -1,21 +1,13 @@
 """Configuration management for MultiAgentPaperCoder.
 
-This module provides a centralized configuration system using Pydantic
-for type-safe configuration from multiple sources (defaults, .env, CLI args, YAML files).
+This module provides centralized configuration using environment variables
+from .env file. No YAML configuration is supported.
 """
 
 import os
 from pathlib import Path
-from typing import Optional, Literal
+from typing import Optional
 from datetime import datetime
-
-try:
-    from pydantic import BaseSettings, Field, field_validator
-    from pydantic_settings import BaseSettings, YamlConfigSettingsSource, SettingsConfigDict
-    PYDANTIC_AVAILABLE = True
-except ImportError:
-    PYDANTIC_AVAILABLE = False
-    BaseSettings = object  # Fallback
 
 from dotenv import load_dotenv
 
@@ -25,13 +17,10 @@ load_dotenv()
 class AppConfig:
     """Application configuration for MultiAgentPaperCoder.
 
-    This class provides centralized configuration with type validation
-    and loading from multiple sources in priority order:
-    1. Environment variables
+    Configuration is loaded from environment variables with these priorities:
+    1. Programmatic arguments (passed to __init__)
     2. .env file
-    3. YAML config file
-    4. CLI arguments
-    5. Default values
+    3. Default values
     """
 
     def __init__(
@@ -48,7 +37,7 @@ class AppConfig:
         timeout_seconds: Optional[int] = None,
 
         # Execution Configuration
-        conda_env_name: Optional[str] = None,
+        conda_env: Optional[str] = None,
         default_output_dir: Optional[Path] = None,
         max_retries: Optional[int] = None,
         skip_validation: Optional[bool] = None,
@@ -71,7 +60,7 @@ class AppConfig:
         self.timeout_seconds = timeout_seconds or int(os.getenv("TIMEOUT_SECONDS", "300"))
 
         # Execution Configuration
-        self.conda_env_name = conda_env_name or os.getenv("CONDA_ENV_NAME", "py12pt")
+        self.conda_env = conda_env or os.getenv("CONDA_ENV_NAME", "py12pt")
         self.default_output_dir = default_output_dir or Path(
             os.getenv("OUTPUT_DIR", "./output")
         )
@@ -94,7 +83,7 @@ class AppConfig:
         if self.llm_provider not in ["claude", "zhipu"]:
             errors.append(
                 f"Invalid LLM provider: {self.llm_provider}. "
-                f"Must be 'claude' or 'zhipu'"
+                f"Must be ' 'claude' or 'zhipu'"
             )
 
         # Validate API keys based on provider
@@ -126,12 +115,12 @@ class AppConfig:
         """Generate unique output path based on PDF filename and timestamp.
 
         Args:
-            pdf_path: Path to the PDF file
+            pdf_path: Path to PDF file
             base_dir: Base output directory (uses default if None)
             timestamp: Timestamp to use (uses current time if None)
 
         Returns:
-            Path object for the unique output directory
+            Path object for unique output directory
         """
         if base_dir is None:
             base_dir = self.default_output_dir
@@ -173,38 +162,8 @@ class AppConfig:
 
         return cls(**kwargs)
 
-    @classmethod
-    def from_yaml(cls, config_path: Path) -> "AppConfig":
-        """Create configuration from YAML file.
-
-        Args:
-            config_path: Path to YAML configuration file
-
-        Returns:
-            AppConfig instance
-
-        Raises:
-            FileNotFoundError: If config file doesn't exist
-            yaml.YAMLError: If YAML is invalid
-        """
-        try:
-            import yaml
-        except ImportError:
-            raise ImportError(
-                "PyYAML not installed. "
-                "Install it with: pip install pyyaml"
-            )
-
-        if not config_path.exists():
-            raise FileNotFoundError(f"Config file not found: {config_path}")
-
-        with open(config_path, "r", encoding="utf-8") as f:
-            config_dict = yaml.safe_load(f)
-
-        return cls(**config_dict)
-
     def get_api_key(self) -> str:
-        """Get the appropriate API key based on provider.
+        """Get appropriate API key based on provider.
 
         Returns:
             API key string for current provider
@@ -215,7 +174,7 @@ class AppConfig:
             return self.anthropic_api_key
 
     def get_model(self) -> str:
-        """Get the model name for current provider.
+        """Get model name for current provider.
 
         Returns:
             Model name string for current provider
@@ -232,7 +191,7 @@ class AppConfig:
             f"provider={self.llm_provider}, "
             f"model={self.get_model()}, "
             f"output_dir={self.default_output_dir}, "
-            f"conda_env={self.conda_env_name})"
+            f"conda_env={self.conda_env})"
         )
 
 
@@ -245,15 +204,10 @@ def create_default_config() -> AppConfig:
     return AppConfig()
 
 
-def load_config_from_file(config_path: Optional[Path] = None) -> AppConfig:
-    """Load configuration from file or use defaults.
-
-    Args:
-        config_path: Optional path to YAML config file
+def load_config() -> AppConfig:
+    """Load configuration from environment.
 
     Returns:
         AppConfig instance
     """
-    if config_path and config_path.exists():
-        return AppConfig.from_yaml(config_path)
     return create_default_config()

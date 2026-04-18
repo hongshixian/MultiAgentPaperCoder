@@ -58,6 +58,7 @@ The system adopts a layered architecture with Agent/Tool separation:
 
 - **Agent Layer**: Responsible for high-level decision-making, planning, and coordination
 - **Tool Layer**: Provides specific basic capabilities (PDF parsing, code execution, etc.)
+- **LLM Layer**: Abstracts LLM provider selection with streaming support
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -71,7 +72,7 @@ The system adopts a layered architecture with Agent/Tool separation:
 ┌─────────────────────────────────────────────────────────┐
 │                     第二层：调度层                       │
 │  ┌───────────────────────────────────────────────────┐  │
-│  │     超级智能体（全局调度、任务分配、异常处理）       │  │
+│  │     LangGraph 工作流（状态机、条件路由）          │  │
 │  └───────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
                               │
@@ -88,63 +89,60 @@ The system adopts a layered architecture with Agent/Tool separation:
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────┐
-│                     第四层：Tool 层                     │
+│                     第四层：Tool/LLM 层               │
 │  ┌──────────────────┐  ┌──────────────────┐        │
 │  │  PDF 解析工具     │  │  代码执行工具     │        │
 │  └──────────────────┘  └──────────────────┘        │
 │  ┌──────────────────┐  ┌──────────────────┐        │
-│  │  大语言模型接口   │  │  领域知识库      │        │
+│  │  LLM 客户端     │  │  提示词管理器    │        │
 │  └──────────────────┘  └──────────────────┘        │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ### Agent Layer
 
-All agents inherit from `BaseAgent` (`src/agents/base.py`) and implement the `__call__` method that receives and returns a `PaperState` dictionary.
+All agents inherit from `BaseAgent` (`src/agents/base.py`) and implement `__call__` method that receives and returns a `PaperState` dictionary.
 
-1. **超级智能体** (`src/agents/super_agent.py`)
-   - Coordinates workflow execution (actual coordination in workflow.py)
-   - Provides status reporting
-
-2. **文档分析智能体** (`src/agents/pdf_reader.py`, `src/agents/algorithm_analyzer.py`)
+1. **文档分析智能体** (`src/agents/pdf_reader.py`, `src/agents/algorithm_analyzer.py`)
    - Reads and parses PDF files
    - Extracts text, structure, metadata
    - Analyzes paper content to extract algorithm details
    - Uses LLM to understand algorithm logic, hyperparameters, requirements
    - Returns structured algorithm analysis
 
-3. **代码生成智能体** (`src/agents/code_planner.py`, `src/agents/code_generator.py`)
-   - Designs project structure based on algorithm analysis
+2. **代码生成智能体** (`src/agents/code_planner.py`, `src/agents/code_generator.py`)
+   - Designs project: structure based on algorithm analysis
    - Plans file organization, implementation steps, dependencies
    - Generates complete Python code files
    - Analyzes code dependencies and generates requirements.txt
    - Uses LLM for architectural decisions and code generation
 
-4. **代码验证智能体** (`src/agents/code_validator.py`, `src/agents/result_verification_agent.py`)
+3. **代码验证智能体** (`src/agents/code_validator.py`, `src/agents/result_verification_agent.py`)
    - Executes generated code in isolated conda environment
    - Monitors execution, captures errors, provides fix suggestions
    - Verifies execution results meet expected outcomes
    - Assesses quality of generated code execution
    - Uses CodeExecutor tool
 
-5. **错误修复智能体** (`src/agents/error_repair_agent.py`)
+4. **错误修复智能体** (`src/agents/error_repair_agent.py`)
    - Analyzes errors from validation
    - Generates fixes for identified issues
    - Updates code files with repairs
 
 ### Workflow Orchestration
 
-**PaperCoderWorkflow** (`src/graph/workflow.py`) orchestrates sequential execution with iterative repair:
+**PaperCoderWorkflow** (`src/graph/workflow.py`) orchestrates sequential execution with iterative repair using LangGraph:
+- Uses LangGraph's StateGraph for state management
+- Implements conditional routing for repair loops
 - Creates initial state with `PaperState` structure
-- Determines next step based on current state, errors, and verification results
 - Handles retry logic with iteration counter (max_iterations, default: 5)
 - Generates execution summaries
 
 **Workflow flow:**
 ```
-start → 文档分析 → 代码生成 → 代码验证
-                          ↓
-代码验证 (需要修复) → 错误修复 → 代码验证 ↗
+start → 文档分析 → 代码规划 → 代码生成 → 环境配置 → 代码验证 → 结果验证
+                                                                        ↓
+结果代码验证 (需要修复) → 错误修复 → 代码验证 ↗
 ```
 
 ### State Management
@@ -159,6 +157,8 @@ start → 文档分析 → 代码生成 → 代码验证
 - `algorithm_analysis`: Algorithm extraction result
 - `code_plan`: Code planning result
 - `generated_code`: Generated code metadata
+- `env_config`: Environment configuration result
+- `validation_result`: Validation result
 - `verification_result`: Result quality assessment
 - `repair_history`: List of repair attempts
 
@@ -167,14 +167,18 @@ start → 文档分析 → 代码生成 → 代码验证
 - `errors`: Accumulated error messages
 - `iteration_count`: Current iteration for repair loop
 - `max_iterations`: Maximum iterations for repair loop (default: 5)
+- `retry_count`: Current retry count
+- `max_retries`: Maximum retry count (default: 3)
 
 ### Tool Layer
 
-1. **LLMClient** (`src/tools/llm_client.py`)
-   - Unified interface for ZhipuAI APIs via LangChain
-   - Supports: `generate()`, `generate_structured()` with JSON parsing, `stream_generate()`
+1. **LLMClient** (`src/llms/llm_client.py`)
+   - Implements BaseLLM interface
+   - Unified interface for LLM providers via LangChain
+   - Supports: `generate()`, `generate_structured()`, `stream_generate()`
    - Configuration via `.env` file (LLM_PROVIDER, ZHIPU_API_KEY, etc.)
    - JSON parsing handles markdown code blocks, trailing commas, malformed JSON
+   - Streaming support with StreamingOutput data class
    - Based on LangChain ecosystem
 
 2. **PDFParser** (`src/tools/pdf_parser.py`)
@@ -184,10 +188,12 @@ start → 文档分析 → 代码生成 → 代码验证
 3. **CodeExecutor** (`src/tools/code_executor.py`)
    - Executes code in specified conda environment
    - Captures stdout/stderr, execution time
+   - Resource monitoring (CPU, memory) when psutil is available
+   - Improved timeout control
 
 ## Configuration
 
-Configuration is provided through `.env` file:
+Configuration is provided through `.env` file (YAML configuration is not supported):
 
 ```bash
 # LLM Provider Selection
@@ -278,30 +284,32 @@ class MyCustomAgent(BaseAgent):
         return {**state, "current_step": "my_step_completed"}
 ```
 
-2. Register agent in `src/graph/workflow.py`:
+2. Add node function in `src/graph/workflow.py`:
 ```python
-from ..agents.my_custom import MyCustomAgent
-
-# In __init__:
-self.my_custom_agent = MyCustomAgent(self.config)
+def my_custom_node(state: PaperState) -> PaperState:
+    """LangGraph node for custom agent."""
+    from from ..agents.my_custom import MyCustomAgent
+    agent = MyCustomAgent(config)
+    return agent(state)
 ```
 
-3. Add routing logic in `_determine_next_step()`:
+3. Register node in `create_workflow()`:
 ```python
-elif current_step == "previous_step_completed":
-    return "my_custom_step"
+workflow.add_node("my_custom", my_custom_node)
 ```
 
-4. Add execution logic in `run()`:
+`4. Add routing logic in conditional edges:
 ```python
-elif next_step == "my_custom_step":
-    state = self.my_custom_agent(state)
+# Add edges to/from your new node
+workflow.add_edge("previous_node", "my_custom")
+workflow.add_edge("my_custom", "next_node")
 ```
 
 ## Key Design Decisions
 
 - **LangChain and LangGraph ecosystem**: The system is built on LangChain and LangGraph framework, leveraging their mature ecosystem for multi-agent orchestration
 - **Agent/Tool layered architecture**: System implementation capability is clearly divided into Agent layer (high-level decision making) and Tool layer (basic capabilities)
+- **LLM abstraction layer**: New `src/llms/` directory provides abstract base class and streaming support
 - **Sequential workflow with repair loop**: Agents execute in order with an iterative repair mechanism for fixing execution errors
 - **Repair logic**: Code verification failures trigger either error repair (fix issues) or code regeneration (up to max_iterations, default: 5)
 - **Structured LLM output**: `generate_structured()` enforces JSON output with robust parsing (handles markdown blocks, trailing commas, malformed JSON)
@@ -310,3 +318,4 @@ elif next_step == "my_custom_step":
 - **Configurable output paths**: Output directories are generated with timestamps and PDF filenames for organization
 - **Dual prompt format support**: YAML-based prompts in `src/prompts/` (preferred, with metadata) and legacy TXT prompts in `prompts/`
 - **High token limit**: LLM_MAX_TOKENS=128000 to support complete code generation without interruption
+- **Resource monitoring**: CodeExecutor now monitors CPU and memory usage when psutil is available

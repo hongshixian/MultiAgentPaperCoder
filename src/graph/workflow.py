@@ -1,14 +1,325 @@
-"""Workflow orchestration using LangGraph."""
+"""Workflow orchestration using LangGraph.
+
+This module provides LangGraph-based workflow orchestration
+with state management, conditional routing, and loop support.
+"""
 
 from typing import Dict, Any
+from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
+
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
+from ..state import PaperState
+
+
+def _create_initial_state(pdf_path: str, config: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Create initial state for workflow.
+
+    Args:
+        pdf_path: Path to PDF file
+        config: Optional configuration dictionary
+
+    Returns:
+        Initial state dictionary
+    """
+    return {
+        "pdf_path": pdf_path,
+        "paper_content": None,
+        "algorithm_analysis": None,
+        "code_plan": None,
+        "generated_code": None,
+        "env_config": None,
+        "validation_result": None,
+        "verification_result": None,
+        "repair_history": [],
+        "current_step": "start",
+        "errors": [],
+        "retry_count": 0,
+        "max_retries": config.get("max_retries", 3) if config else 3,
+        "iteration_count": 0,
+        "max_iterations": 5,
+    }
+
+
+def pdf_reading_node(state: PaperState) -> PaperState:
+    """LangGraph node for PDF reading.
+
+    Args:
+        state: Current state
+
+    Returns:
+        Updated state
+    """
+    from ..agents.pdf_reader import PDFReaderAgent
+
+    # Get config from state or use defaults
+    config = {
+        "extract_formulas": True,
+        "extract_figures": True,
+    }
+
+    agent = PDFReaderAgent(config)
+    result = agent(state)
+    print("✓ PDF reading completed")
+    return result
+
+
+def algorithm_analysis_node(state: PaperState) -> PaperState:
+    """LangGraph node for algorithm analysis.
+
+    Args:
+        state: Current state
+
+    Returns:
+        Updated state
+    """
+    from ..agents.algorithm_analyzer import AlgorithmAnalyzerAgent
+
+    agent = AlgorithmAnalyzerAgent()
+    result = agent(state)
+    print("✓ Algorithm analysis completed")
+    return result
+
+
+def code_planning_node(state: PaperState) -> PaperState:
+    """LangGraph node for code planning.
+
+    Args:
+        state: Current state
+
+    Returns:
+        Updated state
+    """
+    from ..agents.code_planner import CodePlannerAgent
+
+    agent = CodePlannerAgent()
+    result = agent(state)
+    print("✓ Code planning completed")
+    return result
+
+
+def code_generation_node(state: PaperState) -> PaperState:
+    """LangGraph node for code generation.
+
+    Args:
+        state: Current state
+
+    Returns:
+        Updated state
+    """
+    from ..agents.code_generator import CodeGeneratorAgent
+
+    config = {
+        "output_dir": "./output/generated_code",
+    }
+
+    agent = CodeGeneratorAgent(config)
+    result = agent(state)
+    print("✓ Code generation completed")
+    return result
+
+
+def env_config_node(state: PaperState) -> PaperState:
+    """LangGraph node for environment configuration.
+
+    Args:
+        state: Current state
+
+    Returns:
+        Updated state
+    """
+    from ..agents.env_config_agent import EnvConfigAgent
+
+    agent = EnvConfigAgent()
+    result = agent(state)
+    print("✓ Environment configuration completed")
+    return result
+
+
+def validation_node(state: PaperState) -> PaperState:
+    """LangGraph node for code validation.
+
+    Args:
+        state: Current state
+
+    Returns:
+        Updated state
+    """
+    from ..agents.code_validator import CodeValidatorAgent
+
+    config = {
+        "conda_env_name": os.getenv("CONDA_ENV_NAME", "py12pt"),
+    }
+
+    agent = CodeValidatorAgent(config)
+    result = agent(state)
+    validation_status = result.get("validation_result", {}).get("status", "unknown")
+    print(f"✓ Code validation completed (status: {validation_status})")
+    return result
+
+
+def result_verification_node(state: PaperState) -> PaperState:
+    """LangGraph node for result verification.
+
+    Args:
+        state: Current state
+
+    Returns:
+        Updated state
+    """
+    from ..agents.result_verification_agent import ResultVerificationAgent
+
+    agent = ResultVerificationAgent()
+    result = agent(state)
+    verification = result.get("verification_result", {})
+    quality_score = verification.get("quality_score", "N/A")
+    print(f"✓ Result verification completed (quality: {quality_score})")
+    if verification.get("needs_repair"):
+        print(f"  → Needs repair")
+    elif verification.get("needs_regeneration"):
+        print(f"  → Needs code regeneration")
+    return result
+
+
+def error_repair_node(state: PaperState) -> PaperState:
+    """LangGraph node for error repair.
+
+    Args:
+        state: Current state
+
+    Returns:
+        Updated state
+    """
+    from ..agents.error_repair_agent import ErrorRepairAgent
+
+    agent = ErrorRepairAgent()
+    iteration = state.get("iteration_count", 0) + 1
+    state["iteration_count"] = iteration
+    print(f"⚠ Attempting error repair (iteration {iteration})")
+    result = agent(state)
+    return result
+
+
+def code_regeneration_node(state: PaperState) -> PaperState:
+    """LangGraph node for code regeneration.
+
+    Args:
+        state: Current state
+
+    Returns:
+        Updated state
+    """
+    from ..agents.code_generator import CodeGeneratorAgent
+
+    iteration = state.get("iteration_count", 0) + 1
+    state["iteration_count"] = iteration
+    print(f"⚠ Regenerating code (iteration {iteration})")
+
+    config = {
+        "output_dir": "./output/generated_code",
+    }
+
+    agent = CodeGeneratorAgent(config)
+    result = agent(state)
+    return result
+
+
+def should_continue_verification(state: PaperState) -> str:
+    """Determine next step after code verification.
+
+    Args:
+        state: Current state
+
+    Returns:
+        Next step name: "error_repair", "code_regeneration", or "end"
+    """
+    verification = state.get("verification_result", {})
+    iteration_count = state.get("iteration_count", 0)
+    max_iterations = state.get("max_iterations", 5)
+
+    # Check for repair needs
+    if verification.get("needs_repair"):
+        if iteration_count >= max_iterations:
+            print("✗ Max iterations reached for repair")
+            return "end"
+        return "error_repair"
+
+    # Check for regeneration needs
+    if verification.get("needs_regeneration"):
+        if iteration_count >= max_iterations:
+            print("✗ Max iterations reached for regeneration")
+            return "end"
+        return "code_regeneration"
+
+    # Verification passed
+    return "end"
+
+
+def create_workflow(config: Dict[str, Any] = None) -> StateGraph:
+    """Create LangGraph workflow.
+
+    Args:
+        config: Optional configuration dictionary
+
+
+
+    Returns:
+        Compiled StateGraphical workflow
+    """
+    # Create the state graph
+    workflow = StateGraph(PaperState)
+
+    # Add all nodes
+    workflow.add_node("pdf_reading", pdf_reading_node)
+    workflow.add_node("algorithm_analysis", algorithm_analysis_node)
+    workflow.add_node("code_planning", code_planning_node)
+    workflow.add_node("code_generation", code_generation_node)
+    workflow.add_node("env_config", env_config_node)
+    workflow.add_node("validation", validation_node)
+    workflow.add_node("result_verification", result_verification_node)
+    workflow.add_node("error_repair", error_repair_node)
+    workflow.add_node("code_regeneration", code_regeneration_node)
+
+    # Set entry point
+    workflow.set_entry_point("pdf_reading")
+
+    # Add sequential edges (normal flow)
+    workflow.add_edge("pdf_reading", "algorithm_analysis")
+    workflow.add_edge("algorithm_analysis", "code_planning")
+    workflow.add_edge("code_planning", "code_generation")
+    workflow.add_edge("code_generation", "env_config")
+    workflow.add_edge("env_config", "validation")
+    workflow.add_edge("validation", "result_verification")
+
+    # Add conditional edges after result verification
+    workflow.add_conditional_edges(
+        "result_verification",
+        should_continue_verification,
+        {
+            "error_repair": "error_repair",
+            "code_regeneration": "code_regeneration",
+            "end": END,
+        }
+    )
+
+    # After repair, go back to validation
+    workflow.add_edge("error_repair", "validation")
+
+    # After regeneration, go back to env_config (skip code planning)
+    workflow.add_edge("code_regeneration", "env_config")
+
+    # Add memory checkpointing for persistence
+    memory = MemorySaver()
+
+    return workflow.compile(checkpointer=memory)
+
 
 class PaperCoderWorkflow:
-    """Orchestrates paper coding workflow with support for iterative repair."""
+    """Orchestrates paper coding workflow using LangGraph."""
 
     def __init__(self, config: Dict[str, Any] = None):
         """Initialize workflow.
@@ -17,234 +328,46 @@ class PaperCoderWorkflow:
             config: Optional configuration dictionary
         """
         self.config = config or {}
+        self.compiled_graph = create_workflow(self.config)
 
-        # Import agents here to avoid circular imports
-        from ..agents.pdf_reader import PDFReaderAgent
-        from ..agents.algorithm_analyzer import AlgorithmAnalyzerAgent
-        from ..agents.code_planner import CodePlannerAgent
-        from ..agents.code_generator import CodeGeneratorAgent
-        from ..agents.env_config_agent import EnvConfigAgent
-        from ..agents.code_validator import CodeValidatorAgent
-        from ..agents.result_verification_agent import ResultVerificationAgent
-        from ..agents.error_repair_agent import ErrorRepairAgent
-
-        # Initialize agents
-        self.pdf_reader = PDFReaderAgent(self.config)
-        self.algorithm_analyzer = AlgorithmAnalyzerAgent(self.config)
-        self.code_planner = CodePlannerAgent(self.config)
-        self.code_generator = CodeGeneratorAgent({
-            **self.config,
-            "output_dir": self.config.get("output_dir", "./output/generated_code"),
-        })
-        self.env_config_agent = EnvConfigAgent(self.config)
-        self.code_validator = CodeValidatorAgent({
-            **self.config,
-            "conda_env_name": self.config.get("conda_env_name", "py12pt"),
-        })
-        self.result_verification_agent = ResultVerificationAgent(self.config)
-        self.error_repair_agent = ErrorRepairAgent(self.config)
-
-    def _create_initial_state(self, pdf_path: str) -> Dict[str, Any]:
-        """Create initial state for workflow.
-
-        Args:
-            pdf_path: Path to PDF file
-
-        Returns:
-            Initial state dictionary
-        """
-        return {
-            "pdf_path": pdf_path,
-            "paper_content": None,
-            "algorithm_analysis": None,
-            "code_plan": None,
-            "generated_code": None,
-            "env_config": None,
-            "validation_result": None,
-            "verification_result": None,
-            "repair_history": [],
-            "current_step": "start",
-            "errors": [],
-            "retry_count": 0,
-            "max_retries": self.config.get("max_retries", 3),
-            "iteration_count": 0,
-            "max_iterations": 5,
-        }
-
-    def _should_continue(self, state: Dict[str, Any]) -> bool:
-        """Check if workflow should continue.
-
-        Args:
-            state: Current state
-
-        Returns:
-            True if workflow should continue, False otherwise
-        """
-        # Stop if there are critical errors
-        errors = state.get("errors", [])
-        if errors:
-            # Check if any errors are critical (not retryable)
-            critical_errors = [
-                "PDF file not found",
-                "Paper content not available",
-                "Algorithm analysis not available",
-                "Missing algorithm analysis or code plan",
-            ]
-            if any(any(crit in err for crit in critical_errors) for err in errors):
-                return False
-
-        # Stop if iteration count exceeded
-        iteration_count = state.get("iteration_count", 0)
-        max_iterations = state.get("max_iterations", 5)
-        if iteration_count >= max_iterations:
-            return False
-
-        return True
-
-    def _determine_next_step(self, state: Dict[str, Any]) -> str:
-        """Determine next step based on current state.
-
-        Args:
-            state: Current state
-
-        Returns:
-            Name of the next step/agent
-        """
-        current_step = state.get("current_step", "start")
-        errors = state.get("errors", [])
-
-        # Check for critical errors
-        critical_errors = [
-            "PDF file not found",
-            "Paper content not available",
-            "Algorithm analysis not available",
-            "Missing algorithm analysis or code plan",
-        ]
-        if any(any(crit in err for crit in critical_errors) for err in errors):
-            return "end"
-
-        # Check if we should continue
-        iteration_count = state.get("iteration_count", 0)
-        max_iterations = state.get("max_iterations", 5)
-
-        # Normal flow
-        if current_step == "start":
-            return "pdf_reading"
-        elif current_step == "pdf_reading_completed":
-            return "algorithm_analysis"
-        elif current_step == "algorithm_analysis_completed":
-            return "code_planning"
-        elif current_step == "code_planning_completed":
-            return "code_generation"
-        elif current_step == "code_generation_completed":
-            return "env_config"
-        elif current_step == "env_config_completed":
-            return "validation"
-        elif current_step == "validation_completed":
-            return "result_verification"
-        elif current_step == "result_verification_completed":
-            # Check verification result
-            verification = state.get("verification_result", {})
-            if verification.get("needs_repair"):
-                # Repair needed - check iteration count
-                if iteration_count >= max_iterations:
-                    return "end"
-                return "error_repair"
-            elif verification.get("needs_regeneration"):
-                # Regeneration needed - check iteration count
-                if iteration_count >= max_iterations:
-                    return "end"
-                return "code_generation_regenerate"
-            else:
-                # Results are good, end successfully
-                return "end"
-        elif current_step == "error_repair_completed":
-            # After repair, go back to validation
-            return "validation"
-        elif current_step == "code_generation_regenerate":
-            # After regen, go to code generation
-            return "code_generation"
-        else:
-            return "end"
-
-    def run(self, pdf_path: str) -> Dict[str, Any]:
+    def run(self, pdf_path: str, thread_id: str = "default") -> Dict[str, Any]:
         """Run the complete workflow.
 
         Args:
             pdf_path: Path to the PDF file
+            thread_id: Unique thread ID for checkpointing
 
         Returns:
             Final state with all results
         """
         # Create initial state
-        state = self._create_initial_state(pdf_path)
+        initial_state = _create_initial_state(pdf_path, self.config)
 
         # Execute workflow
-        while True:
-            # Determine next step
-            next_step = self._determine_next_step(state)
-
-            if next_step == "end":
-                break
-
-            # Execute next step
-            try:
-                if next_step == "pdf_reading":
-                    state = self.pdf_reader(state)
-                    print("✓ PDF reading completed")
-                elif next_step == "algorithm_analysis":
-                    state = self.algorithm_analyzer(state)
-                    print("✓ Algorithm analysis completed")
-                elif next_step == "code_planning":
-                    state = self.code_planner(state)
-                    print("✓ Code planning completed")
-                elif next_step == "code_generation":
-                    state = self.code_generator(state)
-                    print("✓ Code generation completed")
-                elif next_step == "env_config":
-                    state = self.env_config_agent(state)
-                    print("✓ Environment configuration completed")
-                elif next_step == "validation":
-                    state = self.code_validator(state)
-                    validation_status = state.get("validation_result", {}).get("status", "unknown")
-                    print(f"✓ Code validation completed (status: {validation_status})")
-                elif next_step == "result_verification":
-                    state = self.result_verification_agent(state)
-                    verification = state.get("verification_result", {})
-                    quality_score = verification.get("quality_score", "N/A")
-                    print(f"✓ Result verification completed (quality: {quality_score})")
-                    if verification.get("needs_repair"):
-                        print(f"  → Needs repair")
-                    elif verification.get("needs_regeneration"):
-                        print(f"  → Needs code regeneration")
-                elif next_step == "error_repair":
-                    iteration = state.get("iteration_count", 0) + 1
-                    state["iteration_count"] = iteration
-                    print(f"⚠ Attempting error repair (iteration {iteration})")
-                    state = self.error_repair_agent(state)
-                elif next_step == "code_generation_regenerate":
-                    iteration = state.get("iteration_count", 0) + 1
-                    state["iteration_count"] = iteration
-                    print(f"⚠ Regenerating code (iteration {iteration})")
-                    state = self.code_generator(state)
-
-                # Check if we should continue
-                if not self._should_continue(state):
-                    break
-
-            except Exception as e:
-                state["errors"].append(f"Workflow error at step {next_step}: {str(e)}")
-                print(f"✗ Error at step {next_step}: {str(e)}")
-
-                # Stop on unexpected errors
-                if not self._should_continue(state):
-                    break
+        final_state = self.compiled_graph.invoke(
+            initial_state,
+            config={"configurable": {"thread_id": thread_id}}
+        )
 
         # Add final status
+        self._add_final_status(final_state)
+
+        return final_state
+
+    def _add_final_status(self, state: Dict[str, Any]):
+        """Add final status to state.
+
+        Args:
+            state: State to update
+        """
         verification_result = state.get("verification_result", {})
         if state.get("errors"):
             state["status"] = "failed"
-        elif verification_result.get("status") == "completed" and not verification_result.get("needs_regeneration") and not verification_result.get("needs_repair"):
+        elif (
+            verification_result.get("status") == "completed"
+            and not verification_result.get("needs_regeneration")
+            and not verification_result.get("needs_repair")
+        ):
             state["status"] = "success"
         elif state.get("validation_result", {}).get("status") == "success":
             state["status"] = "validation_success"  # Code ran but not verified
@@ -252,8 +375,6 @@ class PaperCoderWorkflow:
             state["status"] = "validation_failed"
         else:
             state["status"] = "partial"
-
-        return state
 
     def get_summary(self, state: Dict[str, Any]) -> str:
         """Generate a summary of the workflow execution.
