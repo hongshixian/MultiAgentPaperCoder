@@ -36,35 +36,26 @@ MultiAgentPaperCoder/
 │   ├── agents/                 # Agent 实现
 │   │   ├── __init__.py
 │   │   ├── base.py            # Agent 基类
-│   │   ├── pdf_reader.py       # PDF 读取
-│   │   ├── algorithm_analyzer.py  # 算法分析
-│   │   ├── code_planner.py      # 代码规划
-│   │   ├── code_generator.py    # 代码生成
-│   │   ├── code_validator.py    # 代码验证
-│   │   ├── result_verification_agent.py  # 结果验证
-│   │   └── error_repair_agent.py  # 错误修复
+│   │   ├── document_analysis_agent.py    # 文档分析智能体
+│   │   ├── code_generation_agent.py      # 代码生成智能体
+│   │   ├── code_verification_agent.py     # 代码验证智能体
+│   │   └── error_repair_agent.py         # 错误修复智能体
 │   ├── graph/                  # 工作流编排
 │   │   ├── __init__.py
 │   │   └── workflow.py         # LangGraph 工作流
 │   ├── state/                  # 状态管理
 │   │   └── __init__.py
-│   ├── tools/                  # 工具层
-│   │   ├── __init__.py
-│   │   ├── llm_client.py       # LLM 客户端（基于 LangChain）
-│   │   ├── pdf_parser.py        # PDF 解析器
-│   │   └── code_executor.py    # 代码执行器
+│   └── tools/                  # 工具层
+│       ├── __init__.py
+│       ├── pdf_reader.py       # PDF 解析工具
+│       ├── llm_client.py       # LLM 客户端（基于 LangChain）
+│       └── code_executor.py    # 代码执行器
 │   └── prompts/                # 提示词管理
 │       ├── __init__.py         # PromptManager
-│       ├── algorithm_analyzer.yaml
-│       ├── code_planner.yaml
-│       ├── code_generator.yaml
-│       ├── env_config.yaml
-│       ├── result_verification.yaml
+│       ├── document_analysis.yaml
+│       ├── code_generation.yaml
+│       ├── code_verification.yaml
 │       └── error_repair.yaml
-├── prompts/                   # 遗留提示词（TXT 格式）
-│   ├── analyzer.txt
-│   ├── planner.txt
-│   └── generator.txt
 ├── config/                    # 配置文件
 │   └── default.yaml
 ├── test_cases/                # 测试用例
