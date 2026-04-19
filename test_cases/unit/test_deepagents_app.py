@@ -7,7 +7,11 @@ import sys
 import pytest
 
 from app.agent import build_agent
-from app.bootstrap import ensure_minimum_generated_project, generate_verification_report
+from app.bootstrap import (
+    apply_known_runtime_repairs,
+    ensure_minimum_generated_project,
+    generate_verification_report,
+)
 from app.config import Settings
 from app.main import build_user_prompt
 from app.tools.artifact_tools import list_files, read_text_file, save_text_file
@@ -188,3 +192,23 @@ class TestVerificationReport:
         assert "Layer 1: Deterministic Static Verification" in report_text
         assert "Layer 2: Runtime Execution Verification" in report_text
         assert "STDOUT:" in report_text
+
+    def test_apply_known_runtime_repairs_adds_huffman_comparator(self, tmp_path):
+        settings = Settings(output_root=tmp_path / "output")
+        settings.ensure_dirs()
+        main_text = """
+class HuffmanNode:
+    def __init__(self, idx=None, count=0):
+        self.idx = idx
+        self.count = count
+"""
+        (settings.generated_code_dir / "main.py").write_text(main_text, encoding="utf-8")
+
+        actions = apply_known_runtime_repairs(
+            settings,
+            "TypeError: '<' not supported between instances of 'HuffmanNode' and 'HuffmanNode'",
+        )
+
+        updated = (settings.generated_code_dir / "main.py").read_text(encoding="utf-8")
+        assert actions
+        assert "def __lt__(" in updated

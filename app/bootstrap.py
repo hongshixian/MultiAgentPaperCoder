@@ -11,6 +11,14 @@ from app.tools.exec_tools import check_entrypoint_exists, python_syntax_check, r
 from app.tools.pdf_tools import read_pdf_text
 
 logger = logging.getLogger("papercoder.bootstrap")
+HUFFMAN_LT_METHOD = """
+    def __lt__(self, other) -> bool:
+        if not isinstance(other, HuffmanNode):
+            return NotImplemented
+        self_idx = -1 if self.idx is None else self.idx
+        other_idx = -1 if other.idx is None else other.idx
+        return (self.count, self_idx) < (other.count, other_idx)
+"""
 
 BOOTSTRAP_SYSTEM_PROMPT = """
 You are preparing a concise implementation-oriented paper analysis for a code generation workflow.
@@ -66,6 +74,11 @@ def generate_verification_report(settings: Settings) -> Path:
     entrypoint_status = check_entrypoint_exists(str(settings.generated_code_dir))
     syntax_status = python_syntax_check(str(settings.generated_code_dir))
     runtime_status = run_python_entrypoint(str(settings.generated_code_dir))
+    repair_actions = apply_known_runtime_repairs(settings, runtime_status)
+    if repair_actions:
+        files_listing = list_files(str(settings.generated_code_dir))
+        syntax_status = python_syntax_check(str(settings.generated_code_dir))
+        runtime_status = run_python_entrypoint(str(settings.generated_code_dir))
 
     has_main = (settings.generated_code_dir / "main.py").exists()
     has_requirements = requirements_path.exists()
@@ -99,6 +112,9 @@ Report path: {settings.verification_report_path}
 
 ## Layer 2: Runtime Execution Verification
 {runtime_status}
+
+## Deterministic Repair Actions
+{chr(10).join(f"- {action}" for action in repair_actions) if repair_actions else "- none"}
 
 ## Functional Assessment
 - Layer 1 verifies file presence, entrypoint existence, and Python syntax deterministically.
@@ -149,3 +165,22 @@ if __name__ == "__main__":
     main_path.write_text(main_contents, encoding="utf-8")
     logger.warning("Generated fallback entrypoint at %s", main_path)
     return main_path
+
+
+def apply_known_runtime_repairs(settings: Settings, runtime_status: str) -> list[str]:
+    """Apply deterministic patches for known generated-code runtime failures."""
+    main_path = settings.generated_code_dir / "main.py"
+    if not main_path.exists():
+        return []
+
+    actions: list[str] = []
+    source = main_path.read_text(encoding="utf-8")
+
+    huffman_error = "TypeError: '<' not supported between instances of 'HuffmanNode' and 'HuffmanNode'"
+    if huffman_error in runtime_status and "class HuffmanNode:" in source and "def __lt__(" not in source:
+        updated = source.replace("class HuffmanNode:\n", f"class HuffmanNode:\n{HUFFMAN_LT_METHOD}\n", 1)
+        main_path.write_text(updated, encoding="utf-8")
+        actions.append("Added __lt__ comparator to HuffmanNode for heapq compatibility")
+        logger.info("Applied deterministic HuffmanNode comparator repair to %s", main_path)
+
+    return actions
