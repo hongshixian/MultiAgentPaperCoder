@@ -7,7 +7,7 @@ import sys
 import pytest
 
 from app.agent import build_agent
-from app.bootstrap import generate_verification_report
+from app.bootstrap import ensure_minimum_generated_project, generate_verification_report
 from app.config import Settings
 from app.main import build_user_prompt
 from app.tools.artifact_tools import list_files, read_text_file, save_text_file
@@ -157,12 +157,23 @@ class TestMainPrompt:
         prompt = build_user_prompt("/tmp/paper.pdf", "./output")
         assert "./output/generated_code/" in prompt
         assert "./output/artifacts/paper_analysis.txt" in prompt
+        assert "Write main.py and requirements.txt before writing any optional extra modules." in prompt
         assert "source of truth for code generation" in prompt
         assert "brand-new empty workspace" in prompt
 
 
 class TestVerificationReport:
     """Tests for deterministic verification report generation."""
+
+    def test_ensure_minimum_generated_project_creates_fallback_main(self, tmp_path):
+        settings = Settings(output_root=tmp_path / "output")
+        settings.ensure_dirs()
+        (settings.generated_code_dir / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+        main_path = ensure_minimum_generated_project(settings)
+
+        assert main_path.exists()
+        assert "Fallback entrypoint" in main_path.read_text(encoding="utf-8")
 
     def test_generate_verification_report_includes_runtime_section(self, tmp_path, monkeypatch):
         settings = Settings(output_root=tmp_path / "output")

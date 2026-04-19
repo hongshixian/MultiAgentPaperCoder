@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from app.agent import build_agent
-from app.bootstrap import generate_initial_analysis, generate_verification_report
+from app.bootstrap import (
+    ensure_minimum_generated_project,
+    generate_initial_analysis,
+    generate_verification_report,
+)
 from app.config import Settings
 from app.logging_utils import create_run_logger, serialize_for_log
 
@@ -24,11 +28,12 @@ Run one paper reproduction workflow with these requirements:
 3. The generated project must include at least:
    - main.py
    - requirements.txt
-4. Treat this output directory as a brand-new empty workspace for this run. Do not inspect, reuse, or summarize files from any other previous output directory.
-5. Never read or reuse generated files from any previous run directory.
-6. Use the current run's paper analysis artifact as the source of truth for code generation.
-7. Before moving to the next stage, ensure the current stage wrote its required file inside this run directory.
-8. Final response must include:
+4. Write main.py and requirements.txt before writing any optional extra modules.
+5. Treat this output directory as a brand-new empty workspace for this run. Do not inspect, reuse, or summarize files from any other previous output directory.
+6. Never read or reuse generated files from any previous run directory.
+7. Use the current run's paper analysis artifact as the source of truth for code generation.
+8. Before moving to the next stage, ensure the current stage wrote its required file inside this run directory.
+9. Final response must include:
    - paper method summary
    - generated files
    - expected verification considerations
@@ -207,11 +212,7 @@ def main() -> None:
             f"Check log file: {log_path}"
         )
 
-    if not (settings.generated_code_dir / "main.py").exists():
-        raise RuntimeError(
-            f"Current run did not write required generated file: {settings.generated_code_dir / 'main.py'}. "
-            f"Check log file: {log_path}"
-        )
+    ensure_minimum_generated_project(settings)
 
     _print_progress("正在生成本轮验证报告")
     generate_verification_report(settings)

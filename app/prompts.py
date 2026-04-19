@@ -55,6 +55,7 @@ Your job:
 
 Requirements:
 - generate at least main.py and requirements.txt
+- write main.py and requirements.txt before any optional helper modules
 - use TODO comments where details are unknown
 - keep code readable and explicit
 """

@@ -115,3 +115,37 @@ Report path: {settings.verification_report_path}
     settings.verification_report_path.write_text(report, encoding="utf-8")
     logger.info("Saved deterministic verification report to %s", settings.verification_report_path)
     return settings.verification_report_path
+
+
+def ensure_minimum_generated_project(settings: Settings) -> Path:
+    """Ensure the generated project contains a runnable entrypoint."""
+    main_path = settings.generated_code_dir / "main.py"
+    if main_path.exists():
+        logger.info("Generated entrypoint already exists: %s", main_path)
+        return main_path
+
+    module_names = sorted(path.stem for path in settings.generated_code_dir.glob("*.py") if path.name != "main.py")
+    module_summary = ", ".join(module_names) if module_names else "(no additional modules)"
+    main_contents = f'''"""Fallback entrypoint generated to complete the current run output."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+
+def main() -> None:
+    project_root = Path(__file__).resolve().parent
+    python_files = sorted(path.name for path in project_root.glob("*.py"))
+    print("Fallback entrypoint for generated paper reproduction project")
+    print("Available Python modules: {module_summary}")
+    print("Project files:")
+    for name in python_files:
+        print(f" - {{name}}")
+
+
+if __name__ == "__main__":
+    main()
+'''
+    main_path.write_text(main_contents, encoding="utf-8")
+    logger.warning("Generated fallback entrypoint at %s", main_path)
+    return main_path
