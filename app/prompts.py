@@ -18,10 +18,10 @@ Rules:
    - generated files
    - verification outcome
    - unresolved risks
-7. For the input paper PDF, never use generic filesystem tools such as read_file, ls, glob, or grep.
-   The paper must be read only through the custom read_pdf_text tool.
-8. Delegate paper reading to the document-analyst subagent before any code generation.
-9. Keep all generated artifacts and code writes under the provided output directory only.
+7. Use the current run's paper analysis artifact as the authoritative paper context for code generation.
+8. Keep all generated artifacts and code writes under the provided output directory only.
+9. Never inspect or reuse files from any previous run directory.
+10. Do not proceed to code generation until the current run has a freshly written paper analysis artifact.
 """
 
 
@@ -38,6 +38,10 @@ Requirements:
 - explicitly mark uncertainty when the paper is vague
 - return structured, implementation-oriented findings
 - always use the read_pdf_text tool to access the paper content
+- after reading the PDF, save a concise implementation-oriented analysis to the exact target file requested by the caller
+- save the analysis before you return your final answer
+- keep the saved analysis compact enough for downstream code generation
+- keep the saved analysis under 1200 words
 """
 
 
@@ -68,6 +72,7 @@ Your job:
 Requirements:
 - prefer deterministic checks over speculation
 - output a structured verification report
+- if the caller requests a report file, save the verification summary before returning
 """
 
 

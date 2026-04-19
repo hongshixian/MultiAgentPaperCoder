@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -33,6 +34,14 @@ class Settings:
     @property
     def generated_code_dir(self) -> Path:
         return self.output_root / "generated_code"
+
+    @property
+    def paper_analysis_path(self) -> Path:
+        return self.artifacts_dir / "paper_analysis.txt"
+
+    @property
+    def verification_report_path(self) -> Path:
+        return self.artifacts_dir / "verification_report.txt"
 
     @property
     def log_dir(self) -> Path:
@@ -70,6 +79,12 @@ class Settings:
         if self.openai_base_url:
             kwargs["base_url"] = self.openai_base_url
         return ChatOpenAI(**kwargs)
+
+    def create_run_output_root(self, pdf_path: Path, timestamp: datetime | None = None) -> Path:
+        """Create a unique output directory for a single run."""
+        timestamp = timestamp or datetime.now()
+        slug = f"{timestamp.strftime('%Y%m%d_%H%M%S')}_{pdf_path.stem}"
+        return self.output_root / slug
 
 
 def _resolve_output_root(output_root: str | None, output_dir: str | None) -> Path:

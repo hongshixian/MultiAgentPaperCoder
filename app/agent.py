@@ -42,7 +42,7 @@ def build_agent(settings: Settings):
         system_prompt=MAIN_SYSTEM_PROMPT,
         name="papercoder-main",
         checkpointer=MemorySaver(),
-        debug=True,
+        debug=False,
         middleware=[
             PatchToolCallsMiddleware(),
             SubAgentMiddleware(

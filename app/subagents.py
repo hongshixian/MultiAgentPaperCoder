@@ -52,7 +52,6 @@ def build_subagents(settings: Settings) -> list[dict]:
             description="Reads a paper PDF and extracts structured reproduction requirements",
             system_prompt=DOCUMENT_ANALYST_PROMPT,
             tools=[read_pdf_text, save_text_file],
-            response_format=PaperAnalysis,
         ),
         _build_compiled_subagent(
             settings=settings,
@@ -66,7 +65,7 @@ def build_subagents(settings: Settings) -> list[dict]:
             name="code-verifier",
             description="Runs deterministic checks on generated project files",
             system_prompt=VERIFIER_PROMPT,
-            tools=[list_files, read_text_file, check_entrypoint_exists, python_syntax_check],
+            tools=[list_files, read_text_file, save_text_file, check_entrypoint_exists, python_syntax_check],
             response_format=VerificationReport,
         ),
         _build_compiled_subagent(

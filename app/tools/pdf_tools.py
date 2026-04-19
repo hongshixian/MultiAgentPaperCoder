@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 
 logger = logging.getLogger("papercoder.tools.pdf")
+MAX_PDF_CHARS = 20000
 
 
 def read_pdf_text(pdf_path: str) -> str:
@@ -36,5 +37,11 @@ def read_pdf_text(pdf_path: str) -> str:
         logger.error("PDF text extraction returned empty content for %s", path)
         raise ValueError("PDF text extraction returned empty content")
 
-    logger.info("Extracted %d characters from PDF %s", len(full_text), path)
-    return full_text[:50000]
+    truncated = full_text[:MAX_PDF_CHARS]
+    logger.info(
+        "Extracted %d characters from PDF %s and returned %d characters",
+        len(full_text),
+        path,
+        len(truncated),
+    )
+    return truncated

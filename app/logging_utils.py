@@ -16,12 +16,13 @@ def create_run_logger(log_dir: Path) -> tuple[logging.Logger, logging.Handler, P
     log_path = log_dir / f"agent_run_{run_id}.log"
 
     logger = logging.getLogger(f"papercoder.run.{run_id}")
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
     logger.handlers.clear()
     logger.propagate = False
 
     handler = logging.FileHandler(log_path, encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+    handler.setLevel(logging.DEBUG)
     logger.addHandler(handler)
 
     return logger, handler, log_path, run_id

@@ -29,6 +29,17 @@ class TestSettings:
         settings = Settings(model_name="openai:gpt-5.4", output_root=tmp_path / "output")
         assert settings.resolved_model_name == "gpt-5.4"
 
+    def test_create_run_output_root_uses_pdf_stem(self, tmp_path):
+        settings = Settings(output_root=tmp_path / "output")
+        run_dir = settings.create_run_output_root(tmp_path / "paper.pdf")
+        assert run_dir.parent == tmp_path / "output"
+        assert run_dir.name.endswith("_paper")
+
+    def test_settings_expose_required_artifact_paths(self, tmp_path):
+        settings = Settings(output_root=tmp_path / "output")
+        assert settings.paper_analysis_path == tmp_path / "output" / "artifacts" / "paper_analysis.txt"
+        assert settings.verification_report_path == tmp_path / "output" / "artifacts" / "verification_report.txt"
+
 
 class TestArtifactTools:
     """Tests for file artifact tools."""
@@ -122,7 +133,7 @@ class TestAppAgent:
         assert captured["name"] == "papercoder-main"
         assert captured["middleware"]
         assert captured["checkpointer"] is not None
-        assert captured["debug"] is True
+        assert captured["debug"] is False
 
 
 class TestMainPrompt:
@@ -130,6 +141,8 @@ class TestMainPrompt:
 
     def test_build_user_prompt_contains_paths(self):
         prompt = build_user_prompt("/tmp/paper.pdf", "./output")
-        assert "/tmp/paper.pdf" in prompt
         assert "./output/generated_code/" in prompt
-        assert "read_pdf_text" in prompt
+        assert "./output/artifacts/paper_analysis.txt" in prompt
+        assert "./output/artifacts/verification_report.txt" in prompt
+        assert "source of truth for code generation" in prompt
+        assert "brand-new empty workspace" in prompt
