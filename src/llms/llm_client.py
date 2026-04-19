@@ -27,7 +27,7 @@ def get_llm(provider: str = None, **kwargs):
     if provider == "zhipu":
         from langchain_openai import ChatOpenAI
 
-        return ChatOpenAI(
+        llm = ChatOpenAI(
             model=kwargs.get("model", os.getenv("ZHIPU_MODEL", "glm-5")),
             api_key=kwargs.get("api_key", os.getenv("ZHIPU_API_KEY", "")),
             base_url=kwargs.get(
@@ -41,13 +41,19 @@ def get_llm(provider: str = None, **kwargs):
     else:  # claude
         from langchain_anthropic import ChatAnthropic
 
-        return ChatAnthropic(
+        llm = ChatAnthropic(
             model=kwargs.get("model", os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")),
             api_key=kwargs.get("api_key", os.getenv("ANTHROPIC_API_KEY", "")),
             max_tokens=kwargs.get("max_tokens", int(os.getenv("LLM_MAX_TOKENS", "4096"))),
             temperature=kwargs.get("temperature", float(os.getenv("LLM_TEMPERATURE", "0.7"))),
             timeout=kwargs.get("timeout", int(os.getenv("TIMEOUT_SECONDS", "300"))),
         )
+
+    if not hasattr(llm, "model_name"):
+        model_name = getattr(llm, "model", kwargs.get("model"))
+        object.__setattr__(llm, "model_name", model_name)
+
+    return llm
 
 
 class LLMClient(BaseLLM):
@@ -65,6 +71,11 @@ class LLMClient(BaseLLM):
         """
         super().__init__(config)
         self.llm = get_llm(**self.config)
+
+    @staticmethod
+    def get_llm(provider: str = None, **kwargs):
+        """Backward-compatible access to the module-level LLM factory."""
+        return get_llm(provider=provider, **kwargs)
 
     def _build_messages(
         self,
