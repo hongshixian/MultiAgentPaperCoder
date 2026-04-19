@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from app.agent import build_agent
-from app.bootstrap import generate_initial_analysis
+from app.bootstrap import generate_initial_analysis, generate_verification_report
 from app.config import Settings
 from app.logging_utils import create_run_logger, serialize_for_log
 
@@ -24,16 +24,14 @@ Run one paper reproduction workflow with these requirements:
 3. The generated project must include at least:
    - main.py
    - requirements.txt
-4. Use the code-verifier subagent to verify the generated project and save the verification summary to this exact absolute file path: {output_dir}/artifacts/verification_report.txt
-5. If verification fails, use the error-repairer subagent and then verify again
-6. Treat this output directory as a brand-new empty workspace for this run. Do not inspect, reuse, or summarize files from any other previous output directory.
-7. Never read or reuse generated files from any previous run directory.
-8. Use the current run's paper analysis artifact as the source of truth for code generation.
-9. Before moving to the next stage, ensure the current stage wrote its required file inside this run directory.
-10. Final response must include:
+4. Treat this output directory as a brand-new empty workspace for this run. Do not inspect, reuse, or summarize files from any other previous output directory.
+5. Never read or reuse generated files from any previous run directory.
+6. Use the current run's paper analysis artifact as the source of truth for code generation.
+7. Before moving to the next stage, ensure the current stage wrote its required file inside this run directory.
+8. Final response must include:
    - paper method summary
    - generated files
-   - verification status
+   - expected verification considerations
    - unresolved issues and risks
 """
 
@@ -208,6 +206,15 @@ def main() -> None:
             f"Current run did not write required analysis artifact: {settings.paper_analysis_path}. "
             f"Check log file: {log_path}"
         )
+
+    if not (settings.generated_code_dir / "main.py").exists():
+        raise RuntimeError(
+            f"Current run did not write required generated file: {settings.generated_code_dir / 'main.py'}. "
+            f"Check log file: {log_path}"
+        )
+
+    _print_progress("正在生成本轮验证报告")
+    generate_verification_report(settings)
 
     run_logger.debug("Agent run completed with final keys=%s", list(final_state.keys()))
     print(final_state)

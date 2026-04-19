@@ -6,6 +6,8 @@ import logging
 from pathlib import Path
 
 from app.config import Settings
+from app.tools.artifact_tools import list_files, read_text_file
+from app.tools.exec_tools import check_entrypoint_exists, python_syntax_check, run_python_entrypoint
 from app.tools.pdf_tools import read_pdf_text
 
 logger = logging.getLogger("papercoder.bootstrap")
@@ -51,3 +53,65 @@ def generate_initial_analysis(settings: Settings, pdf_path: Path) -> Path:
     settings.paper_analysis_path.write_text(analysis, encoding="utf-8")
     logger.info("Saved bootstrap paper analysis to %s (%d chars)", settings.paper_analysis_path, len(analysis))
     return settings.paper_analysis_path
+
+
+def generate_verification_report(settings: Settings) -> Path:
+    """Create a deterministic two-layer verification report for the current run output."""
+    files_listing = list_files(str(settings.generated_code_dir))
+    requirements_path = settings.generated_code_dir / "requirements.txt"
+    requirements_text = ""
+    if requirements_path.exists():
+        requirements_text = read_text_file(str(requirements_path))
+
+    entrypoint_status = check_entrypoint_exists(str(settings.generated_code_dir))
+    syntax_status = python_syntax_check(str(settings.generated_code_dir))
+    runtime_status = run_python_entrypoint(str(settings.generated_code_dir))
+
+    has_main = (settings.generated_code_dir / "main.py").exists()
+    has_requirements = requirements_path.exists()
+    syntax_ok = syntax_status.startswith("PASSED")
+    entrypoint_ok = entrypoint_status.startswith("FOUND")
+    runtime_ok = runtime_status.startswith("PASSED")
+    outcome = "PASS" if has_main and has_requirements and syntax_ok and entrypoint_ok and runtime_ok else "NEEDS_REPAIR"
+
+    report = f"""# Verification Report
+
+Project path: {settings.generated_code_dir}
+Report path: {settings.verification_report_path}
+
+## Required Files
+- main.py: {"present" if has_main else "missing"}
+- requirements.txt: {"present" if has_requirements else "missing"}
+
+## Files Listing
+{files_listing or "(no files found)"}
+
+## Layer 1: Deterministic Static Verification
+
+### Entrypoint Check
+{entrypoint_status}
+
+### Syntax Check
+{syntax_status}
+
+### Requirements Analysis
+{requirements_text or "(requirements.txt missing or empty)"}
+
+## Layer 2: Runtime Execution Verification
+{runtime_status}
+
+## Functional Assessment
+- Layer 1 verifies file presence, entrypoint existence, and Python syntax deterministically.
+- Layer 2 runs `python main.py` inside the generated project directory and records stdout/stderr verbatim.
+
+## Risk Assessment
+- Runtime verification uses the current local Python environment and does not create an isolated virtualenv.
+- Passing runtime execution still does not prove full paper-level correctness.
+
+## Overall Outcome
+{outcome}
+"""
+    settings.verification_report_path.parent.mkdir(parents=True, exist_ok=True)
+    settings.verification_report_path.write_text(report, encoding="utf-8")
+    logger.info("Saved deterministic verification report to %s", settings.verification_report_path)
+    return settings.verification_report_path

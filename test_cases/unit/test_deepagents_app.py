@@ -7,10 +7,11 @@ import sys
 import pytest
 
 from app.agent import build_agent
+from app.bootstrap import generate_verification_report
 from app.config import Settings
 from app.main import build_user_prompt
 from app.tools.artifact_tools import list_files, read_text_file, save_text_file
-from app.tools.exec_tools import check_entrypoint_exists, python_syntax_check
+from app.tools.exec_tools import check_entrypoint_exists, python_syntax_check, run_python_entrypoint
 
 
 class TestSettings:
@@ -99,6 +100,19 @@ class TestExecTools:
         assert check_entrypoint_exists(str(tmp_path)).startswith("FOUND")
         assert check_entrypoint_exists(str(tmp_path / "missing")).startswith("MISSING")
 
+    def test_run_python_entrypoint_captures_output(self, tmp_path):
+        file_path = tmp_path / "main.py"
+        file_path.write_text("print('hello from main')\n", encoding="utf-8")
+
+        result = run_python_entrypoint(str(tmp_path))
+
+        assert result.startswith("PASSED")
+        assert "hello from main" in result
+
+    def test_run_python_entrypoint_reports_missing_entrypoint(self, tmp_path):
+        result = run_python_entrypoint(str(tmp_path))
+        assert result.startswith("NOT_RUN")
+
 
 class TestAppAgent:
     """Tests for the DeepAgents app builder."""
@@ -143,6 +157,23 @@ class TestMainPrompt:
         prompt = build_user_prompt("/tmp/paper.pdf", "./output")
         assert "./output/generated_code/" in prompt
         assert "./output/artifacts/paper_analysis.txt" in prompt
-        assert "./output/artifacts/verification_report.txt" in prompt
         assert "source of truth for code generation" in prompt
         assert "brand-new empty workspace" in prompt
+
+
+class TestVerificationReport:
+    """Tests for deterministic verification report generation."""
+
+    def test_generate_verification_report_includes_runtime_section(self, tmp_path, monkeypatch):
+        settings = Settings(output_root=tmp_path / "output")
+        settings.ensure_dirs()
+        monkeypatch.setenv("OUTPUT_ROOT", str(settings.output_root))
+        (settings.generated_code_dir / "main.py").write_text("print('ok')\n", encoding="utf-8")
+        (settings.generated_code_dir / "requirements.txt").write_text("numpy\n", encoding="utf-8")
+
+        report_path = generate_verification_report(settings)
+        report_text = report_path.read_text(encoding="utf-8")
+
+        assert "Layer 1: Deterministic Static Verification" in report_text
+        assert "Layer 2: Runtime Execution Verification" in report_text
+        assert "STDOUT:" in report_text
