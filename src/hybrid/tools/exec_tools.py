@@ -1,4 +1,4 @@
-"""Deterministic verification tools."""
+"""Deterministic verification and execution tools."""
 
 from __future__ import annotations
 
@@ -82,4 +82,41 @@ def run_python_entrypoint(root_dir: str, entrypoint: str = "main.py", timeout_se
         f"Exit Code: {completed.returncode}\n"
         f"STDOUT:\n{completed.stdout.strip() or '(empty)'}\n\n"
         f"STDERR:\n{completed.stderr.strip() or '(empty)'}"
+    )
+
+
+def install_requirements(code_dir: str, timeout_seconds: int = 120) -> str:
+    """Run pip install -r requirements.txt in the generated code directory.
+
+    Args:
+        code_dir: Directory containing requirements.txt.
+        timeout_seconds: Installation timeout in seconds.
+
+    Returns:
+        Result string starting with PASSED/FAILED/TIMEOUT/NOT_FOUND.
+    """
+    req_path = Path(code_dir) / "requirements.txt"
+    if not req_path.exists():
+        return f"NOT_FOUND\nNo requirements.txt in {code_dir}"
+
+    try:
+        completed = subprocess.run(
+            ["pip", "install", "-r", "requirements.txt"],
+            cwd=code_dir,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stderr = (exc.stderr or "").strip()[:500]
+        return f"TIMEOUT\nTimeout: {timeout_seconds}s\nSTDERR: {stderr}"
+
+    status = "PASSED" if completed.returncode == 0 else "FAILED"
+    logger.info("pip install %s for %s", status, code_dir)
+    return (
+        f"{status}\n"
+        f"Exit Code: {completed.returncode}\n"
+        f"STDOUT:\n{completed.stdout.strip()[-1000:]}\n\n"
+        f"STDERR:\n{completed.stderr.strip()[-1000:]}"
     )

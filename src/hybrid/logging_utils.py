@@ -1,4 +1,4 @@
-"""Logging helpers for the DeepAgents app."""
+"""Logging helpers for the hybrid implementation."""
 
 from __future__ import annotations
 

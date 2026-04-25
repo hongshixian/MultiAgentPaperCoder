@@ -1,4 +1,4 @@
-"""Configuration for the DeepAgents-based paper reproduction app."""
+"""Configuration for the hybrid paper reproduction implementation."""
 
 from __future__ import annotations
 
@@ -14,11 +14,11 @@ load_dotenv()
 
 @dataclass
 class Settings:
-    """Runtime settings for the DeepAgents implementation."""
+    """Runtime settings for the hybrid implementation."""
 
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     openai_base_url: str = field(default_factory=lambda: os.getenv("OPENAI_BASE_URL", "").strip())
-    model_name: str = field(default_factory=lambda: os.getenv("MODEL_NAME", "gpt-5.4"))
+    model_name: str = field(default_factory=lambda: os.getenv("MODEL_NAME", "glm-4.7"))
     output_root: Path = field(
         default_factory=lambda: _resolve_output_root(
             os.getenv("OUTPUT_ROOT"),
@@ -37,11 +37,7 @@ class Settings:
 
     @property
     def paper_analysis_path(self) -> Path:
-        return self.artifacts_dir / "paper_analysis.txt"
-
-    @property
-    def verification_report_path(self) -> Path:
-        return self.artifacts_dir / "verification_report.txt"
+        return self.artifacts_dir / "paper_analysis.md"
 
     @property
     def log_dir(self) -> Path:
@@ -64,7 +60,11 @@ class Settings:
         return self.model_name
 
     def build_llm(self):
-        """Build an OpenAI-compatible LangChain chat model."""
+        """Build an OpenAI-compatible LangChain chat model.
+
+        Works with ZhipuAI by setting base_url to the ZhipuAI API endpoint.
+        The returned ChatOpenAI instance is accepted by create_agent(model=...).
+        """
         try:
             from langchain_openai import ChatOpenAI
         except ImportError as exc:
