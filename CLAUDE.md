@@ -8,10 +8,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Basic usage - process a PDF paper
-python -m src.main --pdf path/to/paper.pdf
+python -m src.hybrid.main --pdf path/to/paper.pdf
 
-# Enable verbose output
-python -m src.main --pdf paper.pdf --verbose
+# Specify output directory
+python -m src.hybrid.main --pdf paper.pdf --output-dir ./output
+
+# Set max repair iterations (default: 5)
+python -m src.hybrid.main --pdf paper.pdf --max-iterations 10
+
+# Enable debug logging (shows LLM requests/responses)
+python -m src.hybrid.main --pdf paper.pdf --log-level debug
 ```
 
 ### Running Tests
@@ -20,27 +26,19 @@ python -m src.main --pdf paper.pdf --verbose
 # Run all tests with pytest
 pytest test_cases/
 
-# Run specific test categories
-pytest test_cases/unit/
-pytest test_cases/integration/
-
 # Run specific test file
-pytest test_cases/unit/test_basic_imports.py
+pytest test_cases/unit/test_hybrid.py
 
 # Run with verbose output
 pytest test_cases/ -v
 
 # Run specific test
-pytest test_cases/unit/test_config.py::test_app_config_creation
+pytest test_cases/unit/test_hybrid.py::TestRouter::test_needs_repair_below_max
 ```
 
 ### Development Setup
 
 ```bash
-# Create conda environment
-conda create -n py12pt python=3.12
-conda activate py12pt
-
 # Install dependencies
 pip install -r requirements.txt
 
@@ -50,281 +48,225 @@ cp .env.example .env
 
 ## Architecture Overview
 
-MultiAgentPaperCoder is a multi-agent system that automates reproduction of research paper code. The system follows a sequential workflow through specialized agents with an iterative repair mechanism. The implementation is built on LangChain and LangGraph ecosystem.
+MultiAgentPaperCoder is a **hybrid architecture** that combines:
+- **LangGraph** for deterministic workflow orchestration and state management
+- **LangChain agents** for sub-agent specialization (similar to deepagents subagents)
+- **Structured logging** with LangChain callbacks for observability
 
-### System Architecture
+The system automates reproduction of research paper code through a sequential workflow with iterative repair.
 
-The system adopts a layered architecture with Agent/Tool separation:
+### Hybrid Architecture
 
-- **Agent Layer**: Responsible for high-level decision-making, planning, and coordination
-- **Tool Layer**: Provides specific basic capabilities (PDF parsing, code execution, etc.)
-- **LLM Layer**: Abstracts LLM provider selection with streaming support
+The implementation lives in `src/hybrid/` and follows this layered structure:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                     第一层：用户界面层                     │
+│                   CLI Layer (main.py)                    │
 │  ┌───────────────────────────────────────────────────┐  │
-│  │                  用户交互界面                      │  │
+│  │        Argument parsing, logging setup           │  │
 │  └───────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────┐
-│                     第二层：调度层                       │
+│              LangGraph Workflow Layer                    │
 │  ┌───────────────────────────────────────────────────┐  │
-│  │     LangGraph 工作流（状态机、条件路由）          │  │
+│  │    StateGraph with 4 nodes + conditional routing │  │
 │  └───────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────┐
-│                     第三层：Agent 层                    │
-│  ┌──────────────────┐  ┌────────────────┐  ┌──────────────────┐  │
-│  │ 文档分析智能体   │  │ 代码生成智能体 │  │ 代码验证智能体   │  │
-│  └──────────────────┘  └────────────────┘  └──────────────────┘  │
-│  ┌──────────────────────────────────────────────┐        │
-│  │            错误修复智能体                 │        │
-│  └──────────────────────────────────────────────┘        │
+│              Sub-Agent Nodes (agents.py)                 │
+│  ┌──────────────────┐  ┌────────────────┐  ┌──────────────┐  │
+│  │ document-analyst │  │ code-generator │  │ code-verifier │  │
+│  └──────────────────┘  └────────────────┘  └──────────────┘  │
+│  ┌──────────────────────────────────────────────┐           │
+│  │            error-repairer                     │           │
+│  └──────────────────────────────────────────────┘           │
 └─────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────┐
-│                   第四层：Tool/LLM 层               │
-│  ┌──────────────────┐  ┌──────────────────┐        │
-│  │   PDF 解析工具    │  │  代码执行工具    │        │
-│  └──────────────────┘  └──────────────────┘        │
-│  ┌──────────────────┐  ┌──────────────────┐        │
-│  │   LLM 客户端     │  │  提示词管理器    │        │
-│  └──────────────────┘  └──────────────────┘        │
+│                   Tool Layer (tools/)                    │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌────────┐  │
+│  │   pdf_tools      │  │  artifact_tools  │  │ exec_  │  │
+│  │   read_pdf_text  │  │  save/read/list  │  │ tools  │  │
+│  └──────────────────┘  └──────────────────┘  └────────┘  │
+└─────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────┐
+│              LLM Layer (config.py)                       │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │   ChatOpenAI via OpenAI-compatible API (ZhipuAI) │  │
+│  └───────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
 ```
-
-### Agent Layer
-
-**系统有 4 个核心智能体：**
-
-1.
-**文档分析智能体** (`src/agents/document_analysis.py`)
-   - **功能**: 读取PDF并分析算法
-   - 读取和解析 PDF 文件
-   - 提取文本、结构、元数据
-   - 分析论文内容以提取算法详情
-   - 使用 LLM 理解算法逻辑、超参数、需求
-   - 返回结构化的算法分析
-
-2. **代码生成智能体** (`src/agents/code_generation.py`)
-   - **功能**: 规划并生成代码
-   - 根据算法分析结果设计代码结构
-   - 规划文件组织、实现步骤、依赖
-   - 生成完整的 Python 代码文件
-   - 分析代码依赖并生成 requirements.txt
-   - 使用 LLM 进行架构决策和代码生成
-
-3. **代码验证智能体** (`src/agents/code_verification.py`)
-   - **功能**: 验证代码执行并评估结果
-   - 在隔离的 conda 环境中执行生成的代码
-   - 监控执行、捕获错误、提供修复建议
-   - 验证执行结果是否符合预期结果
-   - 评估生成代码执行的质量
-   - 使用 CodeExecutor 和 LLM 工具
-
-4. **错误修复智能体** (`src/agents/error_repair_agent.py`)
-   - **功能**: 分析错误并生成修复
-   - 分析验证报告中的错误信息和运行日志
-   - 定位错误原因，判断错误类型
-   - 根据错误类型制定修复方案
-   - 修改代码中的 bug
-   - 调整不合理的超参数或配置
-   - 验证修复效果
-   - 记录错误修复过程
 
 ### Workflow Orchestration
 
-**PaperCoderWorkflow** (`src/graph/workflow.py`) 使用 LangGraph 编排顺序执行和迭代修复：
-- 使用 LangGraph 的 StateGraph 进行状态管理
-- 实现条件路由（`should_continue_verification`）
-- 创建初始状态，包含 `PaperState` 结构
-- 处理重试逻辑，使用迭代计数器（max_iterations，默认：5）
-- 生成执行摘要
+**PaperCoderWorkflow** (`src/hybrid/workflow.py`) uses LangGraph StateGraph:
+
+- **4 nodes**: `document_analysis`, `code_generation`, `code_verification`, `error_repair`
+- **Conditional routing**: `should_continue_verification()` decides next step based on state
+- **Iterative repair**: Up to `max_iterations` (default: 5) repair loops
+- **State-driven execution**: All nodes read from and update `PaperState`
 
 **Workflow flow:**
 ```
-start → 文档分析 → 代码生成 → 代码验证
-                           ↓
-代码验证 (需要修复) → 错误修复 → 代码验证 ↗
-代码验证 (需要重新生成) → 代码生成 → 代码验证 ↗
+start → document_analysis → code_generation → code_verification
+                                            ↓
+code_verification (needs_repair) → error_repair → code_verification ↗
+code_verification (failed) → end
+code_verification (passed) → end
 ```
+
+### Sub-Agent Nodes
+
+Each node in `src/hybrid/agents.py` creates a LangChain agent with specific tools and schemas:
+
+1. **document-analyst**: Reads PDF, extracts paper structure, saves analysis
+2. **code-generator**: Generates Python project from analysis
+3. **code-verifier**: Installs deps, runs code, validates output
+4. **error-repairer**: Analyzes errors, fixes code files
+
+All sub-agents return structured output via Pydantic schemas (`schemas.py`).
 
 ### State Management
 
-**PaperState** (`src/state/__init__.py`) 是 `TypedDict`，在工作流中传递：
+**PaperState** (`src/hybrid/state.py`) is a `TypedDict` passed between nodes:
 
 **Input fields:**
-- `pdf_path`: PDF 文件路径
+- `pdf_path`: Path to the PDF paper
 
 **Result fields:**
-- `paper_content`: PDF 解析结果
-- `algorithm_analysis`: 算法分析结果
-- `code_plan`: 代码规划结果
-- `generated_code`: 生成代码的元数据
-- `validation_result`: 验证结果
-- `verification_result`: 验证结果
-- `repair_history`: 修复尝试的历史记录
+- `analysis_path`: Path to paper analysis markdown
+- `analysis_status`: "completed" or "failed"
+- `code_dir`: Directory containing generated code
+- `file_list`: List of generated files
+- `generation_status`: "completed" or "failed"
+- `verification_passed`: Boolean
+- `error_type`: "none", "import_error", "runtime_error", "logic_error"
+- `error_cause`: Error description
+- `error_location`: File and line number
+- `stdout_summary`: Execution output summary
+- `needs_repair`: Boolean
+- `repair_status`: "completed" or "failed"
+- `files_modified`: List of modified files
 
 **Control fields:**
-- `current_step`: 当前工作流步骤
-- `errors`: 累积的错误消息
-- `iteration_count`: 修复循环的当前迭代次数
-- `max_iterations`: 修复循环的最大迭代次数（默认：5）
-- `retry_count`: 当前重试计数
-- `max_retries`: 最大重试次数（默认：3）
-
-### Tool Layer
-
-1. **LLMClient** (`src/llms/llm_client.py`)
-   - 实现 BaseLLM 接口
-   - 通过 LangChain 提供统一的 LLM 提供者接口
-   - 支持：`generate()`, `generate_structured()`, `stream_generate()`
-   - 通过 `.env` 文件进行配置（LLM_PROVIDER, ZHIPU_API_KEY 等）
-   - JSON 解析处理 markdown 代码块、尾随逗号、格式错误的 JSON
-   - 使用 StreamingOutput 数据类支持流式输出
-   - 基于 LangChain 生态系统
-
-2. **PDFParser** (`src/tools/pdf_parser.py`)
-   - 使用 PyPDF2/pdfplumber 解析 PDF 文件
-   - 提取文本、结构、元数据
-
-3. **CodeExecutor** (`src/tools/code_executor.py`)
-   - 在指定的 conda 环境中执行代码
-   - 捕获 stdout/stderr、执行时间
-   - 可用 psutil 时支持资源监控（CPU、内存）
-   - 改进的超时控制
+- `iteration_count`: Current repair iteration
+- `max_iterations`: Max repair iterations (default: 5)
+- `errors`: Accumulated error messages
 
 ## Configuration
 
-通过 `.env` 文件提供配置（不支持 YAML 配置）：
+Configure via `.env` file:
 
 ```bash
-# LLM Provider Selection
-LLM_PROVIDER=zhipu
+# LLM Configuration
+OPENAI_API_KEY=your_api_key_here
+OPENAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+MODEL_NAME=glm-4.7
 
-# ZhipuAI Configuration
-ZHIPU_API_KEY=your_api_key_here
-ZHIPU_MODEL=glm-4.7
-ZHIPU_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-
-# Common LLM Configuration
-LLM_MAX_TOKENS=128000
-LLM_TEMPERATURE=0.7
-
-# Execution
-CONDA_ENV_NAME=py12pt
-OUTPUT_DIR=./output/generated_code
-MAX_RETRIES=3
-TIMEOUT_SECONDS=300
-
-# Logging
-LOG_LEVEL=INFO
-LOG_FILE=./output/logs/multi_agent.log
-
-# PDF Parser Configuration
-PDF_PARSER_ENGINE=pdfplumber  # or "PyPDF2"
-EXTRACT_FORMULAS=true
-EXTRACT_FIGURES=true
+# Output
+OUTPUT_ROOT=./output
 ```
 
-## Prompt Templates
+**Settings** (`src/hybrid/config.py`) provides:
+- `build_llm()`: Creates ChatOpenAI instance with configured settings
+- `ensure_dirs()`: Creates output/artifacts/generated_code/logs directories
+- `create_run_output_root()`: Creates timestamped run directory
 
-提示词模板由 `PromptManager`（`src/prompts/__init__.py`）管理，支持两种格式：
+## Logging
 
-### YAML Format (Preferred)
+The system has two logging layers:
 
-位于 `src/prompts/*.yaml`：
-- `algorithm_analyzer.yaml` - 算法提取提示词
-- `code_planner.yaml` - 代码规划提示词
-- `code_generator.yaml` - 代码生成提示词
-- `env_config.yaml` - 环境配置提示词
-- `result_verification.yaml` - 结果验证提示词
-- `error_repair.yaml` - 错误修复提示词
+1. **Console logging** (`src/hybrid/logging_utils.py`):
+   - Controlled by `--log-level` CLI argument
+   - `info`: Shows agent/node/tool calls (default)
+   - `debug`: Adds LLM requests/responses
 
-YAML 格式包含元数据：
-```yaml
-name: template_name
-input_variables: [var1, var2]
-output_format:
-  field: type
-template: |
-  Your prompt here with {var1} and {var2}
-```
+2. **Structured callbacks** (`src/hybrid/callbacks.py`):
+   - `PapercoderCallbackHandler` captures LangChain agent/tool events
+   - Logs "Agent正在思考..." on LLM calls
+   - Logs tool invocations and results
+   - Integrated into all sub-agent nodes
 
-### TXT Format (Legacy)
+3. **File logging**:
+   - All logs written to `{run_dir}/logs/papercoder_{timestamp}.log`
+   - File logs always capture DEBUG level regardless of console setting
 
-位于 `prompts/*.txt`：
-- `analyzer.txt` - 算法提取提示词
-- `planner.txt` - 代码规划提示词
-- `generator.txt` - 代码生成提示词
+## Tool Layer
 
-在 agents 中的使用：
+Tools are in `src/hybrid/tools/`:
+
+### PDF Tools (`pdf_tools.py`)
+- `read_pdf_text(path)`: Extracts text from PDF
+
+### Artifact Tools (`artifact_tools.py`)
+- `save_text_file(path, content)`: Writes file (path must stay under OUTPUT_ROOT)
+- `read_text_file(path)`: Reads file content
+- `list_files(root_dir)`: Lists files recursively
+
+### Exec Tools (`exec_tools.py`)
+- `python_syntax_check(root_dir)`: Validates Python syntax
+- `check_entrypoint_exists(root_dir)`: Checks for main.py
+- `install_requirements(root_dir)`: Installs from requirements.txt
+- `run_python_entrypoint(root_dir)`: Executes main.py
+
+## Adding New Sub-Agents
+
+1. Define Pydantic schema in `schemas.py`:
 ```python
-from ..prompts import PROMPTS
+from pydantic import BaseModel, Field
 
-prompt = PROMPTS.format_template(
-    "code_generator",
-    algorithm_info=...,
-    code_plan=...,
-)
+class MyAgentResult(BaseModel):
+    field_name: str = Field(description="Description")
 ```
 
-## Adding New Agents
-
-1. 在 `src/agents/` 中创建新的 agent 类：
-`python
-from .base import BaseAgent
-from typing import Dict, Any
-
-class MyCustomAgent(BaseAgent):
-    def __init__(self, config: Dict[str, Any] = None):
-        super().__init__("MyCustomAgent", config)
-        # Initialize tools
-
-    def __call__(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        # Process state
-        # Return updated state with current_step updated
-        return {**state, "current_step": "my_step_completed"}
-```
-
-2. 在 `src/graph/workflow.py` 中添加节点函数：
+2. Add system prompt to `prompts.py`:
 ```python
-def my_custom_node(state: PaperState) -> PaperState:
-    """LangGraph node for custom agent."""
-    from ..agents.my_custom import MyCustomAgent
-    agent = MyCustomAgent(config)
-    return agent(state)
+MY_AGENT_PROMPT = "You are a specialized agent for..."
 ```
 
-3. 在 `create_workflow()` 中注册节点：
+3. Create node function in `agents.py`:
 ```python
-workflow.add_node("my_custom", my_custom_node)
+def my_agent_node(state: PaperState, config: dict) -> dict:
+    settings: Settings = config["settings"]
+    
+    agent = create_agent(
+        model=settings.build_llm(),
+        tools=[/* relevant tools */],
+        system_prompt=MY_AGENT_PROMPT,
+        response_format=MyAgentResult,
+        name="my-agent",
+    )
+    
+    result = agent.invoke(
+        {"messages": [HumanMessage(content="Your prompt")]},
+        config={"callbacks": [PapercoderCallbackHandler()]},
+    )
+    
+    structured = _extract_structured(result)
+    return { /* state updates */ }
 ```
 
-4. 添加边到/从你的新节点：
+4. Register node in `workflow.py`:
 ```python
-# Add edges to/from your new node
-workflow.add_edge("previous_node", "my_custom")
-workflow.add_edge("my_custom", "next_node")
+workflow.add_node("my_agent", my_agent_node)
 ```
+
+5. Add edges and routing logic as needed
 
 ## Key Design Decisions
 
-- **LangChain and LangGraph ecosystem**: 系统建立在 LangChain 和 LangGraph 框架上，利用其成熟的生态系统进行多智能体编排
-- **Agent/Tool layered architecture**: 系统实现能力清晰地划分为 Agent 层（高级决策制定）和 Tool 层（基础能力）
-- **LLM abstraction layer**: 新的 `src/llms/` 目录提供抽象基类和流式输出支持
-- **Sequential workflow with repair loop**: Agent 按顺序执行，并具有修复执行错误的迭代修复机制
-- **Repair logic**: 代码验证失败会触发错误修复（修复问题）或代码重新生成（最多 max_iterations，默认为 5）
-- **Structured LLM output**: `generate_structured()` 强制 JSON 输出，并具有强大的解析功能（处理 markdown 块、尾随逗号、格式错误的 JSON）
-- **Multi-LLM support via LangChain**: 架构抽象 LLM 提供者选择，目前支持 ZhipuAI
-- **Sandboxed execution**: 生成的代码在隔离的 conda 环境中运行以确保安全
-- **Configurable output paths**: 输出目录根据时间戳和 PDF 文件名生成，便于组织
-- **Dual prompt format support**: `src/prompts/` 中的基于 YAML 的提示词（首选，包含元数据）和 `prompts/` 中的遗留 TXT 提示词
-- **High token limit**: LLM_MAX_MAX_TOKENS=128000，支持完整的代码生成而不会中断
-- **Resource monitoring**: 当 psutil 可用时，CodeExecutor 现在监控 CPU 和内存使用情况
+- **Hybrid over pure LangGraph or pure DeepAgents**: Combines LangGraph's deterministic state management with LangChain agents' flexibility
+- **State-driven workflow**: All decisions based on TypedDict state, not hidden state
+- **Structured sub-agent output**: All sub-agents return Pydantic schemas for type safety
+- **Sandboxed file writes**: `save_text_file` enforces OUTPUT_ROOT boundary
+- **Callback-based logging**: PapercoderCallbackHandler provides visibility into agent/tool calls
+- **Deterministic router**: `should_continue_verification` has no LLM, pure logic
+- **Repair loop with max iterations**: Prevents infinite loops during error repair
+- **Two-level logging**: Console (configurable) + file (always DEBUG)

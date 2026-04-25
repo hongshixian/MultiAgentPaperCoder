@@ -1,8 +1,8 @@
-# 代码架构设计和开发计划
+# 代码架构设计和实现
 
 ## 概述
 
-本文档描述 MultiAgentPaperCoder 项目的代码架构设计和开发计划，重点阐述基于 LangChain 和 LangGraph 生态的技术实现方案。
+本文档描述 MultiAgentPaperCoder 项目的代码架构设计和当前实现，重点阐述基于 LangGraph 工作流编排和 LangChain 子智能体（类 deepagents）的混合技术方案。
 
 ## 技术选型
 
@@ -10,18 +10,17 @@
 
 | 组件 | 技术选择 | 版本要求 | 选择理由 |
 |------|----------|----------|----------|
-| 智能体编排 | LangGraph | >=0.2.0 | 状态管理、条件路由、循环迭代支持 |
-| LLM 接口 | LangChain | >=0.2.0 | 统一的模型接口、工具调用、记忆管理 |
-| 大语言模型 | 智谱 AI GLM-4.7 | 最新版本 | 符合中文场景需求，Token 限制充足 |
+| 工作流编排 | LangGraph | >=1.1.0 | 状态管理、条件路由、循环迭代支持 |
+| 子智能体框架 | LangChain Agents | >=0.2.0 | 工具调用、结构化输出、回调机制 |
+| 大语言模型 | 智谱 AI GLM-4.7 (OpenAI 兼容 API) | 最新版本 | 符合中文场景需求，Token 限制充足 |
 
 ### 辅助库
 
 | 类别 | 技术选择 | 用途 |
 |------|----------|------|
-| PDF 解析 | PyPDF2, pdfplumber | PDF 文本提取和结构化 |
-| 数据验证 | Pydantic | 配置和状态验证 |
+| PDF 解析 | PyPDF2 | PDF 文本提取和结构化 |
+| 数据验证 | Pydantic | 配置、状态和结构化输出验证 |
 | 环境管理 | python-dotenv | 配置加载 |
-| 日志 | rich | 进度展示和日志输出 |
 
 ## 代码架构设计
 
@@ -31,36 +30,25 @@
 MultiAgentPaperCoder/
 ├── src/
 │   ├── __init__.py
-│   ├── main.py                 # CLI 入口
-│   ├── config.py               # 配置管理
-│   ├── agents/                 # Agent 实现
+│   ├── hybrid/                 # 混合架构实现
 │   │   ├── __init__.py
-│   │   ├── base.py            # Agent 基类
-│   │   ├── document_analysis_agent.py    # 文档分析智能体
-│   │   ├── code_generation_agent.py      # 代码生成智能体
-│   │   ├── code_verification_agent.py     # 代码验证智能体
-│   │   └── error_repair_agent.py         # 错误修复智能体
-│   ├── graph/                  # 工作流编排
-│   │   ├── __init__.py
-│   │   └── workflow.py         # LangGraph 工作流
-│   ├── state/                  # 状态管理
-│   │   └── __init__.py
-│   └── tools/                  # 工具层
-│       ├── __init__.py
-│       ├── pdf_reader.py       # PDF 解析工具
-│       ├── code_executor.py    # 代码执行器
-│   └── llms/                   # LLM 抽象层
-│           ├── __init__.py
-│           ├── base.py           # LLM 基类
-│           └── llm_client.py    # LLM 客户端（基于 LangChain）
-│   └── prompts/                # 提示词管理
-│       ├── __init__.py         # PromptManager
-│       ├── document_analysis.yaml
-│       ├── code_generation.yaml
-│       ├── code_verification.yaml
-│       └── error_repair.yaml
+│   │   ├── main.py            # CLI 入口
+│   │   ├── config.py          # 配置管理（Settings, LLM 构建）
+│   │   ├── agents.py          # LangGraph 节点函数（4个子智能体）
+│   │   ├── workflow.py        # LangGraph StateGraph 工作流
+│   │   ├── state.py           # PaperState TypedDict
+│   │   ├── schemas.py         # Pydantic 结构化输出模型
+│   │   ├── prompts.py         # 子智能体系统提示词
+│   │   ├── logging_utils.py   # 日志配置和文件日志器
+│   │   ├── callbacks.py       # LangChain 回调处理器
+│   │   └── tools/             # 工具层
+│   │       ├── __init__.py
+│   │       ├── pdf_tools.py       # PDF 解析工具
+│   │       ├── artifact_tools.py  # 文件读写工具（沙盒限制）
+│   │       └── exec_tools.py      # 代码执行工具
 ├── test_cases/                # 测试用例
 │   ├── unit/
+│   │   └── test_hybrid.py    # 混合实现测试
 │   └── integration/
 ├── docs/                      # 文档
 ├── output/                    # 输出目录
@@ -68,23 +56,97 @@ MultiAgentPaperCoder/
 └── requirements.txt          # Python 依赖
 ```
 
-### Agent 设计
+### 混合架构设计
 
-所有 Agent 继承自统一的 `BaseAgent`，遵循 LangChain 的 Agent 模式。
+MultiAgentPaperCoder 采用**混合架构**，结合了两种框架的优势：
+
+1. **LangGraph**: 用于确定性的工作流编排和状态管理
+   - StateGraph 状态机
+   - 条件路由
+   - 迭代循环
+
+2. **LangChain Agents**: 用于子智能体专业化
+   - 工具调用
+   - 结构化输出
+   - 回调机制
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                   CLI Layer (main.py)                    │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  参数解析、日志配置 (setup_console_logging)      │  │
+│  └───────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────┐
+│              LangGraph Workflow Layer                    │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  StateGraph: 4 nodes + conditional routing       │  │
+│  │  should_continue_verification() 纯逻辑路由         │  │
+│  └───────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────┐
+│              Sub-Agent Nodes (agents.py)                 │
+│  ┌──────────────────┐  ┌────────────────┐  ┌──────────────┐  │
+│  │ document-analyst │  │ code-generator │  │ code-verifier │  │
+│  │  create_agent()  │  │  create_agent()│  │create_agent() │  │
+│  └──────────────────┘  └────────────────┘  └──────────────┘  │
+│  ┌──────────────────────────────────────────────┐           │
+│  │            error-repairer                    │           │
+│  │            create_agent()                    │           │
+│  └──────────────────────────────────────────────┘           │
+└─────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────┐
+│                   Tool Layer (tools/)                    │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌────────┐  │
+│  │   pdf_tools      │  │  artifact_tools  │  │ exec_  │  │
+│  │   read_pdf_text  │  │  save/read/list  │  │ tools  │  │
+│  └──────────────────┘  └──────────────────┘  └────────┘  │
+└─────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────┐
+│              LLM Layer (config.py)                       │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │   ChatOpenAI (OpenAI-compatible API)              │  │
+│  │   支持 ZhipuAI 等兼容服务                          │  │
+│  └───────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 子智能体节点设计
+
+每个节点在 `src/hybrid/agents.py` 中实现，创建 LangChain agent 并返回结构化输出：
 
 ```python
-from typing import Dict, Any
-from abc import ABC, abstractmethod
+from langchain.agents import create_agent
+from langchain_core.messages import HumanMessage
+from .callbacks import PapercoderCallbackHandler
+from .schemas import MyAgentResult
 
-class BaseAgent(ABC):
-    @abstractmethod
-    def __call__(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        pass
-
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        pass
+def my_agent_node(state: PaperState, config: dict) -> dict:
+    settings: Settings = config["settings"]
+    
+    agent = create_agent(
+        model=settings.build_llm(),
+        tools=[/* 相关工具 */],
+        system_prompt=MY_AGENT_PROMPT,
+        response_format=MyAgentResult,  # Pydantic 结构化输出
+        name="my-agent",
+    )
+    
+    result = agent.invoke(
+        {"messages": [HumanMessage(content="Your prompt")]},
+        config={"callbacks": [PapercoderCallbackHandler()]},  # 结构化日志
+    )
+    
+    structured = _extract_structured(result)
+    return { /* 状态更新 */ }
 ```
 
 ### LangGraph 工作流设计
@@ -92,229 +154,205 @@ class BaseAgent(ABC):
 使用 LangGraph 的 StateGraph 实现状态机模式：
 
 ```python
-from langgraph.graph import StateGraph
-from typing import TypedDict
+from langgraph.graph import StateGraph, END
 
-class PaperState(TypedDict):
+class PaperState(TypedDict, total=False):
+    # 输入
     pdf_path: str
-    paper_content: Optional[Dict]
-    algorithm_analysis: Optional[Dict]
-    code_plan: Optional[Dict]
-    generated_code: Optional[Dict]
-    verification_result: Optional[Dict]
-    repair_history: List[Dict]
-    current_step: str
-    errors: List[str]
+    
+    # 文档分析结果
+    analysis_path: str
+    analysis_status: str  # "completed" or "failed"
+    
+    # 代码生成结果
+    code_dir: str
+    file_list: list[str]
+    generation_status: str  # "completed" or "failed"
+    
+    # 验证结果
+    verification_passed: bool
+    error_type: str  # "none", "import_error", "runtime_error", "logic_error"
+    error_cause: str
+    error_location: str
+    stdout_summary: str
+    needs_repair: bool
+    
+    # 错误修复结果
+    repair_status: str  # "completed" or "failed"
+    files_modified: list[str]
+    
+    # 控制字段
     iteration_count: int
     max_iterations: int
+    errors: list[str]
+
+def should_continue_verification(state: PaperState) -> str:
+    """确定性路由逻辑，无 LLM 参与"""
+    if state.get("analysis_status") != "completed":
+        return "end"
+    if state.get("generation_status") != "completed":
+        return "end"
+    if not state.get("needs_repair", False):
+        return "end"
+    if state.get("iteration_count", 0) >= state.get("max_iterations", 5):
+        return "end"
+    return "error_repair"
 
 # 创建 LangGraph 工作流
 workflow = StateGraph(PaperState)
 
-# 添加节点和边
-workflow.add_node("文档分析", document_analysis_node)
-workflow.add_node("代码生成", code_generation_node)
-workflow.add_node("代码验证", code_verification_node)
-workflow.add_node("错误修复", error_repair_node)
+# 添加节点
+workflow.add_node("document_analysis", document_analysis_node)
+workflow.add_node("code_generation", code_generation_node)
+workflow.add_node("code_verification", code_verification_node)
+workflow.add_node("error_repair", error_repair_node)
 
-# 添加条件路由
+# 添加边
+workflow.set_entry_point("document_analysis")
+workflow.add_edge("document_analysis", "code_generation")
+workflow.add_edge("code_generation", "code_verification")
 workflow.add_conditional_edges(
-    "代码验证",
-    should_continue,
-    {
-        "需要修复": "错误修复",
-        "完成": END
-    }
+    "code_verification",
+    should_continue_verification,
+    {"error_repair": "error_repair", "end": END},
 )
-
-workflow.set_entry_point("文档分析")
+workflow.add_edge("error_repair", "code_verification")
 ```
 
-### LLM 客户端设计（基于 LangChain）
+### LLM 客户端设计（基于 LangChain ChatOpenAI）
 
-使用 LangChain 的 Chat 接口实现统一的 LLM 调用：
+使用 LangChain 的 ChatOpenAI 实现 OpenAI 兼容的 LLM 调用：
 
 ```python
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
 
-class LLMClient:
-    def __init__(self, config: Dict = None):
-        self.llm = ChatOpenAI(
-            model=config.get("model", "glm-4.7"),
-            api_key=config.get("api_key", os.getenv("ZHIPU_API_KEY", "")),
-            base_url=config.get("base_url", "https://open.bigmodel.cn/api/paas/v4"),
-            max_tokens=config.get("max_tokens", 128000),
-            temperature=config.get("temperature", 0.7),
-        )
-
-    def generate(self, prompt: str, system_prompt: str = None) -> str:
-        messages = []
-        if system_prompt:
-            messages.append(SystemMessage(content=system_prompt))
-        messages.append(HumanMessage(content=prompt))
-        response = self.llm.invoke(messages)
-        return response.content
-
-    def generate_structured(self, prompt: str, output_format: Dict = None) -> Dict:
-        # 使用 LangChain 的 with_structured_output
-        from langchain.output_parsers import PydanticOutputParser
-        # ... 实现
+class Settings:
+    @property
+    def resolved_model_name(self) -> str:
+        """标准化模型名称，移除提供商前缀"""
+        if ":" in self.model_name:
+            _, model = self.model_name.split(":", 1)
+            return model
+        return self.model_name
+    
+    def build_llm(self):
+        """创建 OpenAI 兼容的 LangChain Chat 模型
+        
+        支持通过设置 base_url 使用 ZhipuAI 等兼容服务
+        """
+        kwargs = {
+            "model": self.resolved_model_name,
+            "api_key": self.openai_api_key,
+        }
+        if self.openai_base_url:
+            kwargs["base_url"] = self.openai_base_url
+        return ChatOpenAI(**kwargs)
 ```
 
-## 开发计划
+### 日志系统设计
 
-### 第一阶段：核心框架搭建
+系统实现双层日志架构：
 
-**目标**：完成基础架构和工作流实现
+1. **控制台日志** (`src/hybrid/logging_utils.py`):
+   - 由 `--log-level` CLI 参数控制
+   - `info`: 显示 agent/node/tool 调用
+   - `debug`: 额外显示 LLM 请求/响应
 
-#### 1.1 状态管理（State Management）
-- [ ] 实现 `PaperState` TypedDict
-- [ ] 添加状态验证和序列化支持
-- [ ] 实现状态持久化（可选）
+2. **结构化回调** (`src/hybrid/callbacks.py`):
+   - `PapercoderCallbackHandler` 捕获 LangChain 事件
+   - INFO: "Agent正在思考...", "Agent调用了工具: xx"
+   - DEBUG: LLM 请求提示词和响应内容
 
-#### 1.2 基础 Agent 实现
-- [ ] 实现 `BaseAgent` 抽象基类
-- [ ] 实现各子 Agent 的基本框架
-- [ ] 添加单元测试
+3. **文件日志**:
+   - 写入 `{run_dir}/logs/papercoder_{timestamp}.log`
+   - 文件日志始终为 DEBUG 级别
 
-#### 1.3 LangGraph 工作流集成
-- [ ] 使用 LangGraph 重构现有工作流
-- [ ] 实现条件路由
-- [ ] 添加循环迭代支持
-- [ ] 添加状态持久化
+## 当前实现状态
 
-**时间估算**：2 周
+### 已完成模块
 
-### 第二阶段：Agent 功能实现
+#### ✅ 核心框架（第一阶段完成）
+- [x] 实现 `PaperState` TypedDict（`src/hybrid/state.py`）
+- [x] 实现 4 个子智能体节点函数（`src/hybrid/agents.py`）
+- [x] 实现 LangGraph StateGraph 工作流（`src/hybrid/workflow.py`）
+- [x] 实现确定性路由逻辑（`should_continue_verification`）
+- [x] 实现 Pydantic 结构化输出模型（`src/hybrid/schemas.py`）
+- [x] 实现 CLI 入口（`src/hybrid/main.py`）
+- [x] 实现配置管理（`src/hybrid/config.py`）
 
-**目标**：完成各 Agent 的具体业务逻辑
+#### ✅ 子智能体功能（第二阶段完成）
+- [x] 文档分析智能体（document-analyst）: PDF 解析 + 结构化分析
+- [x] 代码生成智能体（code-generator）: 基于分析生成 Python 项目
+- [x] 代码验证智能体（code-verifier）: 安装依赖 + 执行代码 + 验证输出
+- [x] 错误修复智能体（error-repairer）: 分析错误 + 修复代码
 
-#### 2.1 文档分析智能体
-- [ ] 集成 PDF 解析工具
-- [ ] 实现算法分析逻辑（基于 LLM）
-- [ ] 添加结构化输出支持
-- [ ] 实现公式和图表提取（可选）
+#### ✅ 工具层（第三阶段完成）
+- [x] PDF 工具（`pdf_tools.py`）: `read_pdf_text`
+- [x] 工件工具（`artifact_tools.py`）: `save_text_file`, `read_text_file`, `list_files`（带沙盒限制）
+- [x] 执行工具（`exec_tools.py`）: `python_syntax_check`, `check_entrypoint_exists`, `install_requirements`, `run_python_entrypoint`
 
-#### 2.2 代码生成智能体
-- [ ] 实现代码规划功能
-- [ ] 实现代码生成功能（基于 LLM）
-- [ ] 实现依赖分析
-- [ ] 添加配置文件生成
+#### ✅ 日志和可观测性（近期完成）
+- [x] 控制台日志配置（`setup_console_logging`）
+- [x] 文件日志器（`create_run_logger`）
+- [x] LangChain 回调处理器（`PapercoderCallbackHandler`）
+- [x] 工作流节点流转日志（中文）
+- [x] `--log-level` CLI 参数
 
-#### 2.3 代码验证智能体
-- [ ] 集成代码执行工具
-- [ ] 实现代码监控和日志记录
-- [ ] 实现错误收集和分析
-- [ ] 实现结果对比和评估
+#### ✅ 测试覆盖（进行中）
+- [x] 路由逻辑测试（`TestRouter`）
+- [x] 状态字段测试（`TestPaperState`）
+- [x] Pydantic schema 测试（`TestSchemas`）
+- [x] 工具测试（`TestArtifactTools`, `TestExecTools`）
+- [x] 配置测试（`TestSettings`）
+- [x] 工作流构建测试（`TestWorkflowBuild`）
 
-#### 2.4 错误修复智能体
-- [ ] 实现错误分析和定位
-- [ ] 实现代码修复逻辑
-- [ ] 实现修复验证
+### 待完成功能
 
-**时间估算**：3 周
+#### ⏳ 增强验证能力
+- [ ] 真实训练脚本执行（当前仅为语法检查和入口点验证）
+- [ ] 结果指标对比和评估
+- [ ] 资源使用监控（CPU、内存）
 
-### 第三阶段：工具层完善
+#### ⏳ 提示词优化
+- [ ] 基于真实论文调优各子智能体提示词
+- [ ] 添加提示词版本管理
+- [ ] 提示词 A/B 测试框架
 
-**目标**：完善 Tool 层的实现
-
-#### 3.1 LLM 客户端（基于 LangChain）
-- [ ] 使用 LangChain Chat 接口重构
-- [ ] 添加流式输出支持
-- [ ] 添加结构化输出解析器
-- [ ] 添加重试机制和错误处理
-- [ ] 添加 Token 统计
-
-#### 3.2 PDF 解析工具
-- [ ] 优化 PDF 解析准确率
-- [ ] 添加章节结构识别
-- [ ] 添加表格解析支持
-
-#### 3.3 代码执行工具
-- [ ] 改进错误捕获和报告
-- [ ] 添加资源监控（CPU、内存）
-- [ ] 添加超时控制
-
-**时间估算**：2 周
-
-### 第四阶段：提示词优化
-
-**目标**：优化各 Agent 的提示词模板
-
-#### 4.1 提示词模板迁移
-- [ ] 将 TXT 格式提示词迁移到 YAML 格式
-- [ ] 添加元数据和输入变量定义
-- [ ] 实现 PromptManager
-
-#### 4.2 提示词调优
-- [ ] 设计提示词 A/B 测试框架
-- [ ] 优化算法分析提示词
-- [ ] 优化代码生成提示词
-- [ ] 优化错误修复提示词
-- [ ] 优化结果验证提示词
-
-**时间估算**：2 周
-
-### 第五阶段：测试和优化
-
-**目标**：完善测试覆盖率和性能优化
-
-#### 5.1 单元测试
-- [ ] 完成 Agent 基类测试
-- [ ] 完成各 Agent 单元测试
-- [ ] 完成工具层单元测试
-- [ ] 达到 80% 以上覆盖率
-
-#### 5.2 集成测试
-- [ ] 编写端到端工作流测试
-- [ ] 添加 PDF 处理集成测试
-- [ ] 添加代码生成集成测试
-- [ ] 添加错误修复集成测试
-
-#### 5.3 性能优化
-- [ ] LLM 调用缓存
-- [ ] 并行化独立任务
-- [ ] 优化内存使用
-- [ ] 添加性能监控
-
-**时间估算**：2 周
+#### ⏳ 其他改进
+- [ ] 添加更多 PDF 解析特性（公式 OCR、表格解析）
+- [ ] 添加代码静态分析工具
+- [ ] 添加分布式追踪（OpenTelemetry）
+- [ ] 添加性能监控面板
 
 ## 技术债务和未来改进
 
 ### 当前技术债务
 
-1. **LangGraph 集成不完整**：当前工作流是自定义实现，未充分利用 LangGraph 的状态管理和路由能力
-2. **提示词格式混乱**：同时存在 YAML 和 TXT 两种格式，需要统一
-3. **错误处理不一致**：各 Agent 的错误处理逻辑不统一
-4. **测试覆盖率不足**：当前测试覆盖率较低
+1. **验证能力有限**: 当前仅为语法检查和入口点验证，未实现真实训练执行
+2. **错误类型分类不够细致**: 当前只有 4 种错误类型，可能需要更细粒度分类
+3. **测试覆盖率有待提高**: 需要更多集成测试和端到端测试
 
 ### 未来改进方向
 
-1. **完全采用 LangGraph 生态**
-   - 使用 LangGraph 的 StateGraph 替代自定义工作流
-   - 利用 LangGraph 的可视化工具调试工作流
-   - 使用 LangGraph 的持久化功能
+1. **增强验证能力**
+   - 实现真实训练脚本执行
+   - 添加结果指标对比
+   - 添加训练过程监控
 
-2. **统一提示词系统**
-   - 完全迁移到 YAML 格式
-   - 添加提示词版本管理
-   - 支持提示词热更新
+2. **提升可观测性**
+   - 添加分布式追踪
+   - 添加性能监控
+   - 添加日志聚合
 
-3. **增强 Tool 层能力**
-   - 添加更多 PDF 解析特性（公式 OCR、表格解析）
-   - 添加代码静态分析工具
-   - 添加代码格式化工具
-
-4. **提升可观测性**
-   - 添加分布式追踪（如 OpenTelemetry）
-   - 添加性能监控面板
-   - 添加日志聚合和分析
-
-5. **扩展多 LLM 支持**
-   - 使用 LangChain 的多模型支持
-   - 添加 Claude、OpenAI 等模型支持
+3. **扩展多 LLM 支持**
+   - 支持 Anthropic Claude
+   - 支持 OpenAI GPT
    - 实现模型路由和负载均衡
+
+4. **改进代码修复**
+   - 更智能的错误分类
+   - 更精准的修复策略
+   - 修复效果评估
 
 ## 代码规范
 
@@ -330,9 +368,8 @@ class LLMClient:
 
 1. 分支策略：feature 分支开发，合并到 main
 2. 提交信息规范：使用约定式提交
-3. Pull Request 审查：至少一人审核
-4. 持续集成：自动化测试和代码检查
+3. 持续集成：自动化测试
 
 ## 总结
 
-本文档基于 LangChain 和 LangGraph 生态系统，阐述了 MultiAgentPaperCoder 的代码架构设计和开发计划。通过分阶段的开发计划，确保系统架构清晰、可维护、可扩展。技术债务的识别和未来改进方向的规划，为项目的长期发展提供了明确的路线图。
+MultiAgentPaperCoder 项目采用 LangGraph 和 LangChain 的混合架构，实现了论文代码复现的自动化流程。核心架构已完成，包括工作流编排、子智能体实现、工具层和日志系统。未来将重点增强验证能力和提升可观测性。
