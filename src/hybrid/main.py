@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from .config import Settings
-from .logging_utils import create_run_logger
+from .logging_utils import create_run_logger, setup_console_logging
 from .state import PaperState
 from .workflow import create_workflow
 
@@ -73,6 +73,12 @@ def main() -> None:
     parser.add_argument("--pdf", required=True, help="Path to the paper PDF")
     parser.add_argument("--output-dir", default="./output", help="Output directory root")
     parser.add_argument("--max-iterations", type=int, default=5, help="Max repair loop iterations")
+    parser.add_argument(
+        "--log-level",
+        choices=["info", "debug"],
+        default="info",
+        help="Console log level: 'info' (default) shows node/tool info; 'debug' adds LLM request/response details",
+    )
     args = parser.parse_args()
 
     pdf_path = Path(args.pdf).resolve()
@@ -90,14 +96,19 @@ def main() -> None:
     import os
     os.environ["OUTPUT_ROOT"] = str(settings.output_root)
 
-    # Setup logging
+    # Setup logging: console first (so all subsequent loggers inherit),
+    # then file logger for persistent run record.
+    setup_console_logging(args.log_level)
     run_logger, _, log_path, run_id = create_run_logger(settings.log_dir)
     run_logger.info("Starting hybrid workflow run %s", run_id)
     run_logger.info("PDF: %s", pdf_path)
     run_logger.info("Output: %s", settings.output_root)
 
-    print(f"日志文件: {log_path}")
-    print(f"输出目录: {settings.output_root}")
+    # Use the papercoder root logger for user-facing messages so they
+    # respect the console log-level setting.
+    console_logger = logging.getLogger("papercoder")
+    console_logger.info("日志文件: %s", log_path)
+    console_logger.info("输出目录: %s", settings.output_root)
 
     # Build and run workflow
     workflow = create_workflow(settings)
@@ -126,11 +137,12 @@ def main() -> None:
     run_logger.info("Workflow completed")
 
     # Exit code
+    console_logger = logging.getLogger("papercoder")
     if final_state.get("verification_passed"):
-        print("\n论文代码复现成功!")
+        console_logger.info("论文代码复现成功!")
         sys.exit(0)
     else:
-        print("\n论文代码复现未完全通过验证。")
+        console_logger.info("论文代码复现未完全通过验证。")
         sys.exit(1)
 
 

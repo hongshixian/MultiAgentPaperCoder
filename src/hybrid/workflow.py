@@ -43,7 +43,9 @@ def should_continue_verification(state: PaperState) -> str:
 
     if needs_repair and iteration < max_iter:
         logger.info(
-            "Routing to error_repair (iteration %d/%d)", iteration + 1, max_iter
+            "工作流节点流转: code_verification → error_repair (第 %d/%d 次迭代)",
+            iteration + 1,
+            max_iter,
         )
         return "error_repair"
 
@@ -66,12 +68,15 @@ def create_workflow(settings: Settings) -> StateGraph:
 
     # Node functions with settings captured via closure
     def _doc_analysis(state: PaperState) -> dict:
+        logger.info("工作流节点流转: start → document_analysis")
         return document_analysis_node(state, {"settings": settings})
 
     def _code_gen(state: PaperState) -> dict:
+        logger.info("工作流节点流转: document_analysis → code_generation")
         return code_generation_node(state, {"settings": settings})
 
     def _code_verify(state: PaperState) -> dict:
+        logger.info("工作流节点流转: → code_verification")
         return code_verification_node(state, {"settings": settings})
 
     def _err_repair(state: PaperState) -> dict:

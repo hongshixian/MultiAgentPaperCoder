@@ -29,6 +29,7 @@ from .schemas import (
     VerificationResult,
 )
 from .state import PaperState
+from .callbacks import PapercoderCallbackHandler
 from .tools.artifact_tools import list_files, read_text_file, save_text_file
 from .tools.exec_tools import install_requirements, run_python_entrypoint
 from .tools.pdf_tools import read_pdf_text
@@ -74,10 +75,14 @@ def document_analysis_node(state: PaperState, config: dict) -> dict:
         f"PDF路径: {pdf_path}\n"
         f"请将分析结果写入: {settings.paper_analysis_path}"
     )
-    logger.info("Invoking document-analyst for %s", pdf_path)
+    logger.info("当前 文档分析 Agent 正在执行...")
+    logger.debug("document-analyst prompt: %s", pdf_path)
 
     try:
-        result = agent.invoke({"messages": [HumanMessage(content=prompt)]})
+        result = agent.invoke(
+            {"messages": [HumanMessage(content=prompt)]},
+            config={"callbacks": [PapercoderCallbackHandler()]},
+        )
     except Exception as exc:
         logger.exception("document-analyst failed")
         return {
@@ -124,10 +129,14 @@ def code_generation_node(state: PaperState, config: dict) -> dict:
         f"代码输出目录: {settings.generated_code_dir}\n"
         f"请先读取分析报告，再生成代码。必须至少生成 main.py 和 requirements.txt。"
     )
-    logger.info("Invoking code-generator for %s", settings.generated_code_dir)
+    logger.info("当前 代码生成 Agent 正在执行...")
+    logger.debug("code-generator output dir: %s", settings.generated_code_dir)
 
     try:
-        result = agent.invoke({"messages": [HumanMessage(content=prompt)]})
+        result = agent.invoke(
+            {"messages": [HumanMessage(content=prompt)]},
+            config={"callbacks": [PapercoderCallbackHandler()]},
+        )
     except Exception as exc:
         logger.exception("code-generator failed")
         return {
@@ -175,10 +184,14 @@ def code_verification_node(state: PaperState, config: dict) -> dict:
         f"步骤：先 install_requirements 安装依赖，再 run_python_entrypoint 执行代码，"
         f"然后根据执行输出返回结构化验证结果。"
     )
-    logger.info("Invoking code-verifier for %s", code_dir)
+    logger.info("当前 代码验证 Agent 正在执行...")
+    logger.debug("code-verifier for %s", code_dir)
 
     try:
-        result = agent.invoke({"messages": [HumanMessage(content=prompt)]})
+        result = agent.invoke(
+            {"messages": [HumanMessage(content=prompt)]},
+            config={"callbacks": [PapercoderCallbackHandler()]},
+        )
     except Exception as exc:
         logger.exception("code-verifier failed")
         return {
@@ -242,10 +255,14 @@ def error_repair_node(state: PaperState, config: dict) -> dict:
         f"请先读取相关文件，分析问题，然后修复代码。"
     )
     iteration = state.get("iteration_count", 0)
-    logger.info("Invoking error-repairer (iteration %d) for %s", iteration, code_dir)
+    logger.info("当前 错误修复 Agent 正在执行 (第 %d 次迭代)...", iteration + 1)
+    logger.debug("error-repairer (iteration %d) for %s", iteration, code_dir)
 
     try:
-        result = agent.invoke({"messages": [HumanMessage(content=prompt)]})
+        result = agent.invoke(
+            {"messages": [HumanMessage(content=prompt)]},
+            config={"callbacks": [PapercoderCallbackHandler()]},
+        )
     except Exception as exc:
         logger.exception("error-repairer failed")
         return {
