@@ -36,10 +36,19 @@ MultiAgentPaperCoder/
 │       ├── prompts.py
 │       ├── callbacks.py
 │       ├── logging_utils.py
-│       └── tools/
-│           ├── pdf_tools.py
-│           ├── artifact_tools.py
-│           └── exec_tools.py
+│   └── tools/
+│       ├── pdf_tools.py
+│       ├── artifact_tools.py
+│       └── exec_tools.py
+├── src/webui/
+│   ├── __init__.py
+│   ├── app.py
+│   ├── models.py
+│   ├── runner.py
+│   ├── routes/
+│   │   └── __init__.py
+│   └── static/
+│       └── index.html
 ├── docs/
 │   ├── design.md
 │   ├── hybrid-architecture.md
@@ -130,6 +139,27 @@ output/
 - `artifacts/paper_analysis.md` 是论文分析结果
 - `generated_code/` 是生成并修复后的代码目录
 - `output/logs/` 下保存整次运行日志
+
+## Web 界面（WebUI）
+
+`src/webui/` 提供了一个基于 FastAPI 的 Web 任务管理界面，零改动现有 hybrid 代码。
+
+**功能特性：**
+
+- 📋 任务列表（SQLite 持久化）
+- 📎 PDF 上传 + 创建复现任务
+- 📊 任务详情（状态、节点进度、运行日志）
+- 🔄 WebSocket 实时状态推送
+- 🎨 深色主题纯 HTML/JS 前端
+
+**启动方式：**
+
+```bash
+pip install fastapi uvicorn aiosqlite python-multipart
+python -m uvicorn src.webui.app:app --host 0.0.0.0 --port 8000
+```
+
+浏览器打开 `http://localhost:8000` 即可使用。
 
 ## 当前验证能力
 
