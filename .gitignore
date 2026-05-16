@@ -210,3 +210,5 @@ __marimo__/
 .codex
 .codex/
 output/
+webui_tasks.db
+uploads/
